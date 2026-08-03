@@ -12,6 +12,18 @@ La aplicacion crea carpetas por mercado, separa `Static` y `Motion` cuando corre
 
 `Deshacer el ordenamiento anterior` revierte solamente la ultima organizacion realizada desde la aplicacion.
 
+## Descargar la ultima version
+
+La ultima version instalable siempre se descarga desde:
+
+`https://github.com/franiafar/creative-organizer/releases/latest/download/Creative-Organizer.zip`
+
+Descomprime el archivo y abre `Creative Organizer.app`.
+
+## Publicar una version
+
+Al crear y subir una etiqueta con formato `vX.Y.Z`, GitHub genera el ZIP y publica una release automaticamente.
+
 ## Codigo
 
 - `Creative Organizer.app/Contents/Resources/Organizador.m`: interfaz nativa de macOS.

@@ -1,0 +1,18 @@
+# Creative Organizer
+
+Aplicacion para macOS que reorganiza creativos de lanzamientos sin duplicar archivos.
+
+## Uso
+
+1. Copia la columna `Country` de la trafficking sheet si queres respetar ese orden.
+2. Abre `Creative Organizer.app`.
+3. Elige `Ordenar` y selecciona la carpeta del lanzamiento.
+
+La aplicacion crea carpetas por mercado, separa `Static` y `Motion` cuando corresponde, envia archivos sin clasificar a `Otros` y elimina archivos de sistema como `.DS_Store`.
+
+`Deshacer el ordenamiento anterior` revierte solamente la ultima organizacion realizada desde la aplicacion.
+
+## Codigo
+
+- `Creative Organizer.app/Contents/Resources/Organizador.m`: interfaz nativa de macOS.
+- `Creative Organizer.app/Contents/Resources/ordenar_lanzamiento.py`: reglas de deteccion y movimiento de creativos.

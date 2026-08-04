@@ -20,6 +20,8 @@ La ultima version instalable siempre se descarga desde:
 
 Descomprime el archivo y abre `Creative Organizer.app`.
 
+La aplicacion incluye todo lo necesario para funcionar. No requiere instalar Python, Xcode ni herramientas de desarrollo.
+
 ## Publicar una version
 
 Al crear y subir una etiqueta con formato `vX.Y.Z`, GitHub genera el ZIP y publica una release automaticamente.

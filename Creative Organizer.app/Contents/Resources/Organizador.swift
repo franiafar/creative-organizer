@@ -56,13 +56,19 @@ func confirm(title: String, message: String, button: String) -> Bool {
 }
 
 func runOrganizer(root: URL, flag: String) -> (success: Bool, output: String) {
-    guard let scriptURL = Bundle.main.resourceURL?.appendingPathComponent("ordenar_lanzamiento.py") else {
+    guard let resourcesURL = Bundle.main.resourceURL else {
+        return (false, "No encontre el archivo interno del organizador.")
+    }
+
+    let scriptURL = resourcesURL.appendingPathComponent("ordenar_lanzamiento.py")
+    let pythonURL = resourcesURL.appendingPathComponent("Python3.framework/Versions/Current/bin/python3")
+    guard FileManager.default.isExecutableFile(atPath: pythonURL.path) else {
         return (false, "No encontre el archivo interno del organizador.")
     }
 
     let process = Process()
     let outputPipe = Pipe()
-    process.executableURL = URL(fileURLWithPath: "/usr/bin/python3")
+    process.executableURL = pythonURL
     process.arguments = [scriptURL.path, "--root", root.path, flag]
     process.standardOutput = outputPipe
     process.standardError = outputPipe

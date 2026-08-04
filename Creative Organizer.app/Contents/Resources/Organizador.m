@@ -82,14 +82,17 @@ static void ClearLastLaunchFolder(void) {
 }
 
 static NSDictionary *RunOrganizer(NSURL *folder, NSString *flag) {
-    NSString *script = [[[NSBundle mainBundle] resourceURL] URLByAppendingPathComponent:@"ordenar_lanzamiento.py"].path;
-    if (!script) {
+    NSURL *resourcesURL = [NSBundle mainBundle].resourceURL;
+    NSString *script = [resourcesURL URLByAppendingPathComponent:@"ordenar_lanzamiento.py"].path;
+    NSURL *pythonURL = [resourcesURL URLByAppendingPathComponent:@"Python3.framework/Versions/Current/bin/python3"];
+    if (!script || ![[NSFileManager defaultManager] isExecutableFileAtPath:pythonURL.path]) {
         return @{@"success": @NO, @"output": @"No encontre el archivo interno del organizador."};
     }
 
     NSTask *task = [[NSTask alloc] init];
     NSPipe *pipe = [NSPipe pipe];
-    task.executableURL = [NSURL fileURLWithPath:@"/usr/bin/python3"];
+    // Python travels inside the app, so teammates do not need Xcode or Python installed.
+    task.executableURL = pythonURL;
     task.arguments = @[script, @"--root", folder.path, flag];
     task.standardOutput = pipe;
     task.standardError = pipe;

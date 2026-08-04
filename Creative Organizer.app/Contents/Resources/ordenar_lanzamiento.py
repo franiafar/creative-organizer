@@ -377,7 +377,11 @@ def build_market_labels(
                     continue
                 if market not in ordered_markets:
                     ordered_markets.append(market)
-        market_order = ordered_markets + [market for market in market_order if market not in ordered_markets]
+        remaining_markets = [market for market in market_order if market not in ordered_markets]
+        market_order = ordered_markets + sorted(
+            remaining_markets,
+            key=lambda market: (market[0], market[1] or ""),
+        )
 
     display_map: dict[tuple[str, str | None], str] = {}
     base_map: dict[tuple[str, str | None], str] = {}

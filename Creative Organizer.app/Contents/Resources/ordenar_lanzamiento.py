@@ -71,6 +71,7 @@ COUNTRY_ALIASES = {
     "new zealand": ("NZ", "New Zealand"),
     "peru": ("PE", "Peru"),
     "philippines": ("PH", "Philippines"),
+    "phillipines": ("PH", "Philippines"),
     "poland": ("PL", "Poland"),
     "singapore": ("SG", "Singapore"),
     "slovenia": ("SI", "Slovenia"),
@@ -125,6 +126,7 @@ COMBINED_MARKET_ALIASES = {
     "ieen": ("IE", "Ireland", "EN", "British English"),
     "inen": ("IN", "India", "EN", "British English"),
     "inhi": ("IN", "India", "HI", "Hindi"),
+    "inhr": ("IN", "India", "RO", "Roman Hindi"),
     "inro": ("IN", "India", "RO", "Roman Hindi"),
     "usen": ("US", "United States", "EN", "US English"),
 }
@@ -133,7 +135,8 @@ COUNTRY_CODES = {code for code, _ in COUNTRY_ALIASES.values()}
 LANGUAGE_CODES = {code for code, _ in LANGUAGE_ALIASES.values()}
 
 ORGANIZED_FOLDER_RE = re.compile(
-    r"^\s*(?P<index>\d+)\s*[-.]?\s*(?P<country>[A-Z]{2})(?:\s+(?P<language>[A-Z]{2}))?(?:\s+(?P<asset>ST|MT))?\s*$"
+    r"^\s*(?P<index>\d+)\s*[-.]?\s*(?P<country>[A-Z]{2})(?:\s+(?P<language>(?!(?:ST|MT)(?:\s|$))[A-Z]{2}))?(?:(?:\s*-\s*|\s+)(?P<asset>ST|MT))?\s*$",
+    re.IGNORECASE,
 )
 
 
@@ -406,10 +409,10 @@ def destination_for_record(
     market_folder = base_map[key]
     asset_types = asset_types_by_market[key]
     if asset_types == {"Static"}:
-        market_folder = f"{market_folder} ST"
+        market_folder = f"{market_folder} - St"
         relative_destination = Path(market_folder) / record.creative_name / record.source.name
     elif asset_types == {"Motion"}:
-        market_folder = f"{market_folder} MT"
+        market_folder = f"{market_folder} - Mt"
         relative_destination = Path(market_folder) / record.creative_name / record.source.name
     else:
         relative_destination = Path(market_folder) / record.asset_type / record.creative_name / record.source.name

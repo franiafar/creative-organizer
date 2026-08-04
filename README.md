@@ -8,7 +8,7 @@ Aplicacion para macOS que reorganiza creativos de lanzamientos sin duplicar arch
 2. Abre `Creative Organizer.app`.
 3. Elige `Ordenar` y selecciona la carpeta del lanzamiento.
 
-La aplicacion crea carpetas por mercado, separa `Static` y `Motion` cuando corresponde, envia archivos sin clasificar a `Otros` y elimina archivos de sistema como `.DS_Store`.
+La aplicacion crea carpetas por mercado, por ejemplo `01 - IN HI - St`, separa `Static` y `Motion` cuando corresponde, envia archivos sin clasificar a `Otros` y elimina archivos de sistema como `.DS_Store`.
 
 `Deshacer el ordenamiento anterior` revierte solamente la ultima organizacion realizada desde la aplicacion.
 

@@ -10,7 +10,7 @@ Aplicacion para macOS que reorganiza creativos de lanzamientos sin duplicar arch
 
 Los mercados que no figuren en la columna copiada se agregan despues, en orden alfabetico.
 
-La aplicacion crea carpetas por mercado, por ejemplo `01 - IN HI - St`, separa `Static` y `Motion` cuando corresponde, envia archivos sin clasificar a `Otros` y elimina archivos de sistema como `.DS_Store`.
+La aplicacion crea carpetas por mercado, por ejemplo `01 - IN HI - St`, y conserva variantes intermedias como `Alt CTA/CaricatureRefreshKawaii - Female`. Separa `Static` y `Motion` cuando corresponde, envia archivos sin clasificar a `Otros` y elimina archivos de sistema como `.DS_Store`.
 
 `Deshacer el ordenamiento anterior` revierte solamente la ultima organizacion realizada desde la aplicacion.
 

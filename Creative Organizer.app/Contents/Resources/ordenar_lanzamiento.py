@@ -129,6 +129,9 @@ COMBINED_MARKET_ALIASES = {
     "inhr": ("IN", "India", "RO", "Roman Hindi"),
     "inro": ("IN", "India", "RO", "Roman Hindi"),
     "usen": ("US", "United States", "EN", "US English"),
+    "uken": ("GB", "United Kingdom", "EN", "British English"),
+    "fpfh": ("PH", "Philippines", "TL", "Filipino"),
+    "fpph": ("PH", "Philippines", "TL", "Filipino"),
 }
 
 COUNTRY_CODES = {code for code, _ in COUNTRY_ALIASES.values()}
@@ -150,6 +153,7 @@ class AssetRecord:
     language_name: str | None = None
     asset_type: str | None = None
     creative_name: str | None = None
+    creative_path: list[str] = field(default_factory=list)
     asset_folder_index: int | None = None
     reasons: list[str] = field(default_factory=list)
 
@@ -322,6 +326,74 @@ def detect_creative_name(parts: list[str], asset_folder_index: int | None) -> st
     return None
 
 
+def is_creative_metadata_part(part: str) -> bool:
+    normalized = normalize(part)
+    return (
+        not normalized
+        or normalized in STATIC_NAMES
+        or normalized in MOTION_NAMES
+        or normalized in COUNTRY_ALIASES
+        or normalized in LANGUAGE_ALIASES
+        or normalized in COMBINED_MARKET_ALIASES
+        or ORGANIZED_FOLDER_RE.match(part) is not None
+    )
+
+
+def creative_name_from_file_name(file_name: str) -> str | None:
+    """Recover the creative label when a previous run already flattened its folders."""
+    tokens = Path(file_name).stem.split("_")
+    creative_tokens: list[str] = []
+
+    for token in tokens:
+        compact = re.sub(r"[^A-Z]", "", token.upper())
+        normalized = normalize(token)
+        if re.fullmatch(r"\d{4}-\d{2}-\d{2}|\d+|\d+x\d+", token):
+            continue
+        if (
+            not token
+            or "cta" in normalized
+            or normalize(compact) in COMBINED_MARKET_ALIASES
+            or normalized in {"meta", "tiktok", "tik tok", "tt", "linkedin", "li", "static", "motion", "video", "img"}
+        ):
+            break
+        creative_tokens.append(token)
+
+    return " - ".join(creative_tokens) or None
+
+
+def is_delivery_variant(part: str) -> bool:
+    return "cta" in normalize(part)
+
+
+def clean_creative_label(label: str) -> str:
+    pieces = [piece.strip() for piece in label.split(" - ")]
+    while pieces and normalize(re.sub(r"[^A-Z]", "", pieces[-1].upper())) in COMBINED_MARKET_ALIASES:
+        pieces.pop()
+    return " - ".join(pieces)
+
+
+def detect_creative_path(parts: list[str], asset_folder_index: int | None, file_name: str) -> list[str]:
+    if asset_folder_index is not None:
+        route_parts = parts[asset_folder_index + 1 :]
+    else:
+        route_parts = parts
+
+    route_parts = [part.strip() for part in route_parts if not is_creative_metadata_part(part)]
+    if len(route_parts) >= 2:
+        if is_delivery_variant(route_parts[0]):
+            return [route_parts[0], *[clean_creative_label(part) for part in route_parts[1:]]]
+        # Keep the delivery variation first, then group the related creative pieces together.
+        return [route_parts[-1], " - ".join(route_parts[:-1])]
+    if len(route_parts) == 1:
+        file_name_label = creative_name_from_file_name(file_name)
+        if is_delivery_variant(route_parts[0]) and file_name_label:
+            return [route_parts[0], file_name_label]
+        return route_parts
+
+    fallback_name = detect_creative_name(parts, asset_folder_index)
+    return [fallback_name] if fallback_name else []
+
+
 def parse_record(root: Path, source: Path) -> AssetRecord:
     relative_source = source.relative_to(root)
     parts = list(relative_source.parts[:-1])
@@ -329,7 +401,7 @@ def parse_record(root: Path, source: Path) -> AssetRecord:
 
     asset_type, asset_folder_index = detect_media_type(parts, source.suffix.lower())
     country_code, country_name, language_code, language_name = detect_country_and_language(parts, source.name)
-    creative_name = detect_creative_name(parts, asset_folder_index)
+    creative_path = detect_creative_path(parts, asset_folder_index, source.name)
 
     record.asset_type = asset_type
     record.asset_folder_index = asset_folder_index
@@ -337,13 +409,14 @@ def parse_record(root: Path, source: Path) -> AssetRecord:
     record.country_name = country_name
     record.language_code = language_code
     record.language_name = language_name
-    record.creative_name = creative_name
+    record.creative_path = creative_path
+    record.creative_name = " / ".join(creative_path) if creative_path else None
 
     if record.country_code is None:
         record.reasons.append("No pude detectar el pais")
     if record.asset_type is None:
         record.reasons.append("No pude detectar si es Static o Motion")
-    if record.creative_name is None:
+    if not record.creative_path:
         record.reasons.append("No pude detectar el nombre del creativo")
     return record
 
@@ -406,7 +479,7 @@ def destination_for_record(
     base_map: dict[tuple[str, str | None], str],
     asset_types_by_market: dict[tuple[str, str | None], set[str]],
 ) -> Path | None:
-    if not (record.country_code and record.asset_type and record.creative_name):
+    if not (record.country_code and record.asset_type and record.creative_path):
         return None
 
     key = (record.country_code, record.language_code)
@@ -414,12 +487,12 @@ def destination_for_record(
     asset_types = asset_types_by_market[key]
     if asset_types == {"Static"}:
         market_folder = f"{market_folder} - St"
-        relative_destination = Path(market_folder) / record.creative_name / record.source.name
+        relative_destination = Path(market_folder, *record.creative_path, record.source.name)
     elif asset_types == {"Motion"}:
         market_folder = f"{market_folder} - Mt"
-        relative_destination = Path(market_folder) / record.creative_name / record.source.name
+        relative_destination = Path(market_folder, *record.creative_path, record.source.name)
     else:
-        relative_destination = Path(market_folder) / record.asset_type / record.creative_name / record.source.name
+        relative_destination = Path(market_folder, record.asset_type, *record.creative_path, record.source.name)
     return root / relative_destination
 
 

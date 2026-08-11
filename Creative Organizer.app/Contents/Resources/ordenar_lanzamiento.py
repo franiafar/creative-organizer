@@ -192,6 +192,21 @@ def market_from_compact_token(token: str) -> tuple[str, str, str, str] | None:
     )
 
 
+def country_code_from_token(token: str) -> str | None:
+    """Resolve a country name or its two-letter code from a folder label."""
+    normalized = normalize(token)
+    if normalized in COUNTRY_ALIASES:
+        return COUNTRY_ALIASES[normalized][0]
+
+    compact = re.sub(r"[^A-Z]", "", token.upper())
+    canonical_code = MARKET_CODE_ALIASES.get(compact, compact)
+    return canonical_code if len(canonical_code) == 2 and canonical_code in COUNTRY_CODES else None
+
+
+def is_country_marker(part: str) -> bool:
+    return country_code_from_token(part) is not None
+
+
 def natural_key(text: str) -> list[object]:
     return [int(part) if part.isdigit() else part.lower() for part in re.split(r"(\d+)", text)]
 
@@ -301,7 +316,11 @@ def detect_country_and_language(parts: list[str], file_name: str) -> tuple[str |
             return country_code, country_code, language_code, language_code
 
     normalized_parts = [normalize(part) for part in parts]
-    for normalized in normalized_parts:
+    for part, normalized in zip(parts, normalized_parts):
+        part_country_code = country_code_from_token(part)
+        if part_country_code and country_code is None:
+            country_code = part_country_code
+            country_name = COUNTRY_NAMES_BY_CODE[part_country_code]
         if normalized in COUNTRY_ALIASES and country_code is None:
             country_code, country_name = COUNTRY_ALIASES[normalized]
         if normalized in LANGUAGE_ALIASES and language_code is None:
@@ -339,7 +358,7 @@ def detect_creative_name(parts: list[str], asset_folder_index: int | None) -> st
             continue
         if normalized in ignored:
             continue
-        if normalized in COUNTRY_ALIASES:
+        if is_country_marker(part):
             continue
         if normalized in LANGUAGE_ALIASES:
             continue
@@ -359,7 +378,7 @@ def is_creative_metadata_part(part: str) -> bool:
         not normalized
         or normalized in STATIC_NAMES
         or normalized in MOTION_NAMES
-        or normalized in COUNTRY_ALIASES
+        or is_country_marker(part)
         or normalized in LANGUAGE_ALIASES
         or market_from_compact_token(normalized) is not None
         or ORGANIZED_FOLDER_RE.match(part) is not None
@@ -580,7 +599,7 @@ def build_plan(
     resolved = [record for record in records if not record.reasons]
     unresolved = [record for record in records if record.reasons]
 
-    base_map, _ = build_market_labels(resolved, requested_order)
+    base_map, display_map = build_market_labels(resolved, requested_order)
     asset_types_by_market: dict[tuple[str, str | None], set[str]] = defaultdict(set)
     for record in resolved:
         asset_types_by_market[(record.country_code, record.language_code)].add(record.asset_type)
@@ -627,8 +646,8 @@ def build_plan(
         "resolvedFiles": len(resolved),
         "unresolvedFiles": 0,
         "otherFiles": len(other_files),
-        "marketCount": len({record.country_code for record in resolved if record.country_code}),
-        "markets": list(dict.fromkeys(country_code for country_code, _ in base_map)),
+        "marketCount": len(base_map),
+        "markets": [re.sub(r"^\d+\s*-\s*", "", label) for label in display_map.values()],
         "clipboardOrderUsed": bool(requested_order),
         "systemJunk": [file_path.relative_to(root).as_posix() for file_path in all_files if is_system_junk(file_path)],
     }
@@ -731,11 +750,8 @@ def clean_dragged_path(raw_value: str) -> str:
 
 def build_summary_message(root: Path, summary: dict, unresolved: list[AssetRecord]) -> str:
     lines = [
-        f"Carpeta: {root.name}",
-        f"Archivos detectados: {summary['totalFiles']}",
-        f"Listos para mover: {summary['resolvedFiles']}",
-        f"Sin resolver: {summary['unresolvedFiles']}",
-        f"Mercados detectados: {summary['marketCount']}",
+        "Organizacion terminada.",
+        f"Mercados detectados: {', '.join(summary['markets']) or 'ninguno'}",
     ]
     if unresolved:
         lines.append("")

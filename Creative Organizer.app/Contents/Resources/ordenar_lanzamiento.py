@@ -136,6 +136,11 @@ COMBINED_MARKET_ALIASES = {
 
 COUNTRY_CODES = {code for code, _ in COUNTRY_ALIASES.values()}
 LANGUAGE_CODES = {code for code, _ in LANGUAGE_ALIASES.values()}
+COUNTRY_NAMES_BY_CODE = {code: name for code, name in COUNTRY_ALIASES.values()}
+LANGUAGE_NAMES_BY_CODE = {code: name for code, name in LANGUAGE_ALIASES.values()}
+
+# Google Drive exports use UK in technical file names, while the output uses GB.
+MARKET_CODE_ALIASES = {"UK": "GB"}
 
 ORGANIZED_FOLDER_RE = re.compile(
     r"^\s*(?P<index>\d+)\s*[-.]?\s*(?P<country>[A-Z]{2})(?:\s+(?P<language>(?!(?:ST|MT)(?:\s|$))[A-Z]{2}))?(?:(?:\s*-\s*|\s+)(?P<asset>ST|MT))?\s*$",
@@ -165,6 +170,26 @@ def normalize(text: str) -> str:
     cleaned = cleaned.replace("-", " ")
     cleaned = re.sub(r"\s+", " ", cleaned)
     return cleaned.strip().lower()
+
+
+def market_from_compact_token(token: str) -> tuple[str, str, str, str] | None:
+    """Resolve Google Drive's compact country-language tokens, such as AUEN."""
+    normalized = normalize(token)
+    if normalized in COMBINED_MARKET_ALIASES:
+        return COMBINED_MARKET_ALIASES[normalized]
+    if len(normalized) != 4:
+        return None
+
+    country_code = MARKET_CODE_ALIASES.get(normalized[:2].upper(), normalized[:2].upper())
+    language_code = normalized[2:].upper()
+    if country_code not in COUNTRY_CODES or language_code not in LANGUAGE_CODES:
+        return None
+    return (
+        country_code,
+        COUNTRY_NAMES_BY_CODE[country_code],
+        language_code,
+        LANGUAGE_NAMES_BY_CODE[language_code],
+    )
 
 
 def natural_key(text: str) -> list[object]:
@@ -212,8 +237,9 @@ def parse_clipboard_market_order(text: str) -> list[tuple[str, str | None]]:
 
         compact = re.sub(r"[^A-Z]", "", line.upper())
         market: tuple[str, str | None] | None = None
-        if normalize(compact) in COMBINED_MARKET_ALIASES:
-            code, _, language_code, _ = COMBINED_MARKET_ALIASES[normalize(compact)]
+        compact_market = market_from_compact_token(compact)
+        if compact_market:
+            code, _, language_code, _ = compact_market
             market = (code, language_code)
         elif normalized in COUNTRY_ALIASES:
             code, _ = COUNTRY_ALIASES[normalized]
@@ -280,8 +306,9 @@ def detect_country_and_language(parts: list[str], file_name: str) -> tuple[str |
             country_code, country_name = COUNTRY_ALIASES[normalized]
         if normalized in LANGUAGE_ALIASES and language_code is None:
             language_code, language_name = LANGUAGE_ALIASES[normalized]
-        if normalized in COMBINED_MARKET_ALIASES:
-            code, name, lang_code, lang_name = COMBINED_MARKET_ALIASES[normalized]
+        compact_market = market_from_compact_token(normalized)
+        if compact_market:
+            code, name, lang_code, lang_name = compact_market
             country_code = country_code or code
             country_name = country_name or name
             language_code = language_code or lang_code
@@ -289,9 +316,9 @@ def detect_country_and_language(parts: list[str], file_name: str) -> tuple[str |
 
     file_tokens = re.findall(r"[A-Z]{4}", file_name.upper())
     for token in file_tokens:
-        normalized = normalize(token)
-        if normalized in COMBINED_MARKET_ALIASES:
-            code, name, lang_code, lang_name = COMBINED_MARKET_ALIASES[normalized]
+        compact_market = market_from_compact_token(token)
+        if compact_market:
+            code, name, lang_code, lang_name = compact_market
             country_code = country_code or code
             country_name = country_name or name
             language_code = language_code or lang_code
@@ -316,7 +343,7 @@ def detect_creative_name(parts: list[str], asset_folder_index: int | None) -> st
             continue
         if normalized in LANGUAGE_ALIASES:
             continue
-        if normalized in COMBINED_MARKET_ALIASES:
+        if market_from_compact_token(normalized):
             continue
         if ORGANIZED_FOLDER_RE.match(part):
             continue
@@ -334,7 +361,7 @@ def is_creative_metadata_part(part: str) -> bool:
         or normalized in MOTION_NAMES
         or normalized in COUNTRY_ALIASES
         or normalized in LANGUAGE_ALIASES
-        or normalized in COMBINED_MARKET_ALIASES
+        or market_from_compact_token(normalized) is not None
         or ORGANIZED_FOLDER_RE.match(part) is not None
     )
 
@@ -352,7 +379,7 @@ def creative_name_from_file_name(file_name: str) -> str | None:
         if (
             not token
             or "cta" in normalized
-            or normalize(compact) in COMBINED_MARKET_ALIASES
+            or market_from_compact_token(compact) is not None
             or normalized in {"meta", "tiktok", "tik tok", "tt", "linkedin", "li", "static", "motion", "video", "img"}
         ):
             break
@@ -367,7 +394,7 @@ def is_delivery_variant(part: str) -> bool:
 
 def clean_creative_label(label: str) -> str:
     pieces = [piece.strip() for piece in label.split(" - ")]
-    while pieces and normalize(re.sub(r"[^A-Z]", "", pieces[-1].upper())) in COMBINED_MARKET_ALIASES:
+    while pieces and market_from_compact_token(re.sub(r"[^A-Z]", "", pieces[-1].upper())):
         pieces.pop()
     return " - ".join(pieces)
 
@@ -389,6 +416,10 @@ def detect_creative_path(parts: list[str], asset_folder_index: int | None, file_
         if is_delivery_variant(route_parts[0]) and file_name_label:
             return [route_parts[0], file_name_label]
         return route_parts
+
+    file_name_label = creative_name_from_file_name(file_name)
+    if file_name_label:
+        return [file_name_label]
 
     fallback_name = detect_creative_name(parts, asset_folder_index)
     return [fallback_name] if fallback_name else []

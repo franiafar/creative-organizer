@@ -6,6 +6,7 @@ import json
 import os
 import re
 import shutil
+import stat
 import subprocess
 import sys
 import unicodedata
@@ -163,6 +164,10 @@ class AssetRecord:
     reasons: list[str] = field(default_factory=list)
 
 
+class OrganizationError(RuntimeError):
+    """A concise, user-facing error while applying an organization."""
+
+
 def normalize(text: str) -> str:
     cleaned = unicodedata.normalize("NFKD", text)
     cleaned = "".join(char for char in cleaned if not unicodedata.combining(char))
@@ -313,7 +318,9 @@ def detect_country_and_language(parts: list[str], file_name: str) -> tuple[str |
         if match:
             country_code = match.group("country")
             language_code = match.group("language")
-            return country_code, country_code, language_code, language_code
+            country_name = COUNTRY_NAMES_BY_CODE.get(country_code, country_code)
+            language_name = LANGUAGE_NAMES_BY_CODE.get(language_code, language_code)
+            break
 
     normalized_parts = [normalize(part) for part in parts]
     for part, normalized in zip(parts, normalized_parts):
@@ -689,6 +696,59 @@ def print_summary(root: Path, summary: dict, moves: list[dict], unresolved: list
         print(f"Archivos enviados a Otros: {summary['otherFiles']}")
 
 
+def unlock_for_move(path: Path, root: Path) -> None:
+    """Clear Finder's Locked flag from an asset and its parent folders."""
+    paths = [path]
+    current = path.parent
+    while True:
+        paths.append(current)
+        if current == root:
+            break
+        current = current.parent
+
+    try:
+        for item in paths:
+            item_stat = item.stat()
+            if item_stat.st_flags & stat.UF_IMMUTABLE:
+                os.chflags(item, item_stat.st_flags & ~stat.UF_IMMUTABLE)
+            if not item_stat.st_mode & stat.S_IWUSR:
+                item.chmod(item_stat.st_mode | stat.S_IWUSR)
+    except OSError as error:
+        raise OrganizationError(
+            f"No pude desbloquear '{path.name}'. Cerralo si esta abierto e intenta de nuevo."
+        ) from error
+
+
+def files_are_identical(first: Path, second: Path) -> bool:
+    """Only remove a duplicate source when its destination is byte-for-byte equal."""
+    try:
+        if first.stat().st_size != second.stat().st_size:
+            return False
+        with first.open("rb") as first_file, second.open("rb") as second_file:
+            while True:
+                first_chunk = first_file.read(1024 * 1024)
+                second_chunk = second_file.read(1024 * 1024)
+                if first_chunk != second_chunk:
+                    return False
+                if not first_chunk:
+                    return True
+    except OSError:
+        return False
+
+
+def rollback_moves(root: Path, applied_moves: list[dict]) -> None:
+    """Leave the launch as it was if any single move cannot be completed."""
+    for move in reversed(applied_moves):
+        source = root / move["to"]
+        destination = root / move["from"]
+        if not source.exists():
+            continue
+        unlock_for_move(source, root)
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        shutil.move(str(source), str(destination))
+    remove_empty_directories(root)
+
+
 def apply_plan(root: Path, moves: list[dict], unresolved: list[AssetRecord], system_junk: list[str]) -> Path:
     stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
     metadata_dir = root / ".launch-organizer"
@@ -697,19 +757,42 @@ def apply_plan(root: Path, moves: list[dict], unresolved: list[AssetRecord], sys
     undo_path = metadata_dir / "undo-last.json"
 
     applied_moves: list[dict] = []
-    for move in moves:
-        source = root / move["relativeSource"]
-        destination = ensure_unique_destination(source, root / move["relativeDestination"])
-        if source == destination:
-            continue
-        destination.parent.mkdir(parents=True, exist_ok=True)
-        shutil.move(str(source), str(destination))
-        applied_moves.append(
-            {
-                "from": move["relativeSource"],
-                "to": destination.relative_to(root).as_posix(),
-            }
-        )
+    current_source: Path | None = None
+    try:
+        for move in moves:
+            source = root / move["relativeSource"]
+            current_source = source
+            planned_destination = root / move["relativeDestination"]
+            if source == planned_destination:
+                continue
+
+            unlock_for_move(source, root)
+            if planned_destination.exists() and files_are_identical(source, planned_destination):
+                source.unlink()
+                destination = planned_destination
+            else:
+                destination = ensure_unique_destination(source, planned_destination)
+                destination.parent.mkdir(parents=True, exist_ok=True)
+                shutil.move(str(source), str(destination))
+
+            applied_moves.append(
+                {
+                    "from": move["relativeSource"],
+                    "to": destination.relative_to(root).as_posix(),
+                }
+            )
+    except (OSError, OrganizationError) as error:
+        try:
+            rollback_moves(root, applied_moves)
+        except OSError:
+            pass
+        if isinstance(error, OrganizationError):
+            raise error
+        file_label = current_source.name if current_source else "un archivo"
+        raise OrganizationError(
+            f"No pude mover '{file_label}'. La carpeta volvio a su estado anterior. "
+            "Cerra ese archivo si esta abierto e intenta de nuevo."
+        ) from error
 
     remove_system_junk_files(root)
 
@@ -954,4 +1037,8 @@ def main(argv: list[str] | None = None) -> int:
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    try:
+        raise SystemExit(main())
+    except OrganizationError as error:
+        print(str(error), file=sys.stderr)
+        raise SystemExit(1)

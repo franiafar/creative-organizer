@@ -385,6 +385,11 @@ def is_creative_metadata_part(part: str) -> bool:
     )
 
 
+def is_generic_asset_folder(part: str) -> bool:
+    """Ignore source-export labels such as 'Motion 11' or 'Static 4'."""
+    return re.fullmatch(r"(?:motion|mot|video|static|stat|image|img)\s*\d+", normalize(part)) is not None
+
+
 def creative_name_from_file_name(file_name: str) -> str | None:
     """Recover the creative label when a previous run already flattened its folders."""
     tokens = Path(file_name).stem.split("_")
@@ -424,7 +429,11 @@ def detect_creative_path(parts: list[str], asset_folder_index: int | None, file_
     else:
         route_parts = parts
 
-    route_parts = [part.strip() for part in route_parts if not is_creative_metadata_part(part)]
+    route_parts = [
+        part.strip()
+        for part in route_parts
+        if not is_creative_metadata_part(part) and not is_generic_asset_folder(part)
+    ]
     if len(route_parts) >= 2:
         if is_delivery_variant(route_parts[0]):
             return [route_parts[0], *[clean_creative_label(part) for part in route_parts[1:]]]

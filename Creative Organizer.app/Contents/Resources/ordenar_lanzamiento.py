@@ -14,30 +14,32 @@ from collections import defaultdict
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import Iterable
+from typing import Dict, Iterable, List, Optional, Set, Tuple
 
 
 STATIC_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp"}
 MOTION_EXTENSIONS = {".mov", ".mp4", ".m4v", ".gif"}
 SUPPORTED_EXTENSIONS = STATIC_EXTENSIONS | MOTION_EXTENSIONS
-SYSTEM_JUNK_FILENAMES = {".DS_Store", "Thumbs.db", "desktop.ini"}
-# India is always split by language, even when a launch contains only one variant.
 ALWAYS_SHOW_LANGUAGE_CODES = {"IN"}
 
-STATIC_NAMES = {
-    "st",
-    "sta",
-    "static",
-    "still",
-    "stills",
+STATIC_NAMES = {"st", "sta", "static", "still", "stills", "image", "images"}
+MOTION_NAMES = {"mo", "mot", "motion", "vid", "video", "videos"}
+PLATFORM_ALIASES = {
+    "meta": "Meta",
+    "facebook": "Meta",
+    "instagram": "Meta",
+    "tiktok": "TikTok",
+    "tik tok": "TikTok",
+    "tt": "TikTok",
 }
-MOTION_NAMES = {
-    "mo",
-    "mot",
-    "motion",
-    "vid",
-    "video",
-    "videos",
+OUT_OF_SCOPE_PLATFORMS = {
+    "youtube",
+    "you tube",
+    "yt",
+    "linkedin",
+    "snapchat",
+    "pinterest",
+    "google",
 }
 
 COUNTRY_ALIASES = {
@@ -117,51 +119,57 @@ LANGUAGE_ALIASES = {
 }
 
 COMBINED_MARKET_ALIASES = {
-    "coes": ("CO", "Colombia", "ES", "Spanish"),
-    "cres": ("CR", "Costa Rica", "ES", "Spanish"),
-    "mxes": ("MX", "Mexico", "ES", "Spanish"),
-    "pees": ("PE", "Peru", "ES", "Spanish"),
     "caen": ("CA", "Canada", "EN", "English"),
     "cafr": ("CA", "Canada", "FR", "French Canadian"),
-    "gben": ("GB", "United Kingdom", "EN", "British English"),
-    "ieen": ("IE", "Ireland", "EN", "British English"),
     "inen": ("IN", "India", "EN", "British English"),
     "inhi": ("IN", "India", "HI", "Hindi"),
     "inhr": ("IN", "India", "RO", "Roman Hindi"),
     "inro": ("IN", "India", "RO", "Roman Hindi"),
-    "usen": ("US", "United States", "EN", "US English"),
     "uken": ("GB", "United Kingdom", "EN", "British English"),
-    "fpfh": ("PH", "Philippines", "TL", "Filipino"),
-    "fpph": ("PH", "Philippines", "TL", "Filipino"),
 }
 
-COUNTRY_CODES = {code for code, _ in COUNTRY_ALIASES.values()}
-LANGUAGE_CODES = {code for code, _ in LANGUAGE_ALIASES.values()}
-COUNTRY_NAMES_BY_CODE = {code: name for code, name in COUNTRY_ALIASES.values()}
-LANGUAGE_NAMES_BY_CODE = {code: name for code, name in LANGUAGE_ALIASES.values()}
-
-# Google Drive exports use UK in technical file names, while the output uses GB.
+COUNTRY_CODES = {value[0] for value in COUNTRY_ALIASES.values()}
+LANGUAGE_CODES = {value[0] for value in LANGUAGE_ALIASES.values()}
+COUNTRY_NAMES_BY_CODE = {value[0]: value[1] for value in COUNTRY_ALIASES.values()}
+LANGUAGE_NAMES_BY_CODE = {value[0]: value[1] for value in LANGUAGE_ALIASES.values()}
 MARKET_CODE_ALIASES = {"UK": "GB"}
 
 ORGANIZED_FOLDER_RE = re.compile(
-    r"^\s*(?P<index>\d+)\s*[-.]?\s*(?P<country>[A-Z]{2})(?:\s+(?P<language>(?!(?:ST|MT)(?:\s|$))[A-Z]{2}))?(?:(?:\s*-\s*|\s+)(?P<asset>ST|MT))?\s*$",
+    r"^\s*(?P<index>\d+)\s*-\s*(?P<country>[A-Z]{2})"
+    r"(?:\s+(?P<language>(?!(?:Static|Motion|St|Mt)(?:\s|$))[A-Z]{2}))?"
+    r"(?:\s*-\s*(?P<asset>Static|Motion|St|Mt))?\s*$",
     re.IGNORECASE,
 )
+GENERIC_WRAPPER_RE = re.compile(
+    r"^(?:motion|mot|video|static|stat|still|image|img|export|exports|delivery|deliverables)\s*\d*$"
+)
+ASPECT_RE = re.compile(r"^\d{1,2}\s*[x:]\s*\d{1,2}$", re.IGNORECASE)
+RESOLUTION_RE = re.compile(r"^\d{3,5}\s*x\s*\d{3,5}(?:\s*px)?$", re.IGNORECASE)
+DURATION_RE = re.compile(r"^\d+(?:\.\d+)?\s*(?:s|sec|secs|seconds)$", re.IGNORECASE)
+DATE_RE = re.compile(r"^(?:\d{4}[-.]\d{1,2}[-.]\d{1,2}|\d{1,2}[-.]\d{1,2}[-.]\d{2,4})$")
+PRODUCTION_ID_RE = re.compile(r"^(?:\d{3,}|(?:id|pid|job|v)\s*[- ]?\d+)$", re.IGNORECASE)
 
 
 @dataclass
 class AssetRecord:
     source: Path
     relative_source: Path
-    country_code: str | None = None
-    country_name: str | None = None
-    language_code: str | None = None
-    language_name: str | None = None
-    asset_type: str | None = None
-    creative_name: str | None = None
-    creative_path: list[str] = field(default_factory=list)
-    asset_folder_index: int | None = None
-    reasons: list[str] = field(default_factory=list)
+    country_code: Optional[str] = None
+    country_name: Optional[str] = None
+    language_code: Optional[str] = None
+    language_name: Optional[str] = None
+    platform: Optional[str] = None
+    scope: str = "unresolved"
+    asset_type: Optional[str] = None
+    creative_name: Optional[str] = None
+    creative_path: List[str] = field(default_factory=list)
+    semantic_source_path: List[str] = field(default_factory=list)
+    ignored_metadata: List[str] = field(default_factory=list)
+    evidence: Dict[str, object] = field(default_factory=dict)
+    confidence: str = "low"
+    reasons: List[str] = field(default_factory=list)
+    existing_market_index: Optional[int] = None
+    destination: Optional[Path] = None
 
 
 class OrganizationError(RuntimeError):
@@ -171,22 +179,22 @@ class OrganizationError(RuntimeError):
 def normalize(text: str) -> str:
     cleaned = unicodedata.normalize("NFKD", text)
     cleaned = "".join(char for char in cleaned if not unicodedata.combining(char))
-    cleaned = cleaned.replace("_", " ")
-    cleaned = cleaned.replace("-", " ")
-    cleaned = re.sub(r"\s+", " ", cleaned)
-    return cleaned.strip().lower()
+    cleaned = cleaned.replace("_", " ").replace("-", " ")
+    return re.sub(r"\s+", " ", cleaned).strip().lower()
 
 
-def market_from_compact_token(token: str) -> tuple[str, str, str, str] | None:
-    """Resolve Google Drive's compact country-language tokens, such as AUEN."""
-    normalized = normalize(token)
-    if normalized in COMBINED_MARKET_ALIASES:
-        return COMBINED_MARKET_ALIASES[normalized]
-    if len(normalized) != 4:
+def natural_key(text: str) -> List[object]:
+    return [int(part) if part.isdigit() else part.lower() for part in re.split(r"(\d+)", text)]
+
+
+def market_from_compact_token(token: str) -> Optional[Tuple[str, str, str, str]]:
+    compact = re.sub(r"[^A-Z]", "", token.upper()).lower()
+    if compact in COMBINED_MARKET_ALIASES:
+        return COMBINED_MARKET_ALIASES[compact]
+    if len(compact) != 4:
         return None
-
-    country_code = MARKET_CODE_ALIASES.get(normalized[:2].upper(), normalized[:2].upper())
-    language_code = normalized[2:].upper()
+    country_code = MARKET_CODE_ALIASES.get(compact[:2].upper(), compact[:2].upper())
+    language_code = compact[2:].upper()
     if country_code not in COUNTRY_CODES or language_code not in LANGUAGE_CODES:
         return None
     return (
@@ -197,507 +205,568 @@ def market_from_compact_token(token: str) -> tuple[str, str, str, str] | None:
     )
 
 
-def country_code_from_token(token: str) -> str | None:
-    """Resolve a country name or its two-letter code from a folder label."""
+def country_code_from_token(token: str) -> Optional[str]:
     normalized = normalize(token)
     if normalized in COUNTRY_ALIASES:
         return COUNTRY_ALIASES[normalized][0]
-
     compact = re.sub(r"[^A-Z]", "", token.upper())
-    canonical_code = MARKET_CODE_ALIASES.get(compact, compact)
-    return canonical_code if len(canonical_code) == 2 and canonical_code in COUNTRY_CODES else None
+    canonical = MARKET_CODE_ALIASES.get(compact, compact)
+    if len(canonical) == 2 and canonical in COUNTRY_CODES:
+        return canonical
+    return None
 
 
-def is_country_marker(part: str) -> bool:
-    return country_code_from_token(part) is not None
-
-
-def natural_key(text: str) -> list[object]:
-    return [int(part) if part.isdigit() else part.lower() for part in re.split(r"(\d+)", text)]
-
-
-def is_hidden_part(part: str) -> bool:
-    return part.startswith(".")
+def language_code_from_token(token: str) -> Optional[str]:
+    normalized = normalize(token)
+    if normalized in LANGUAGE_ALIASES:
+        return LANGUAGE_ALIASES[normalized][0]
+    compact = re.sub(r"[^A-Z]", "", token.upper())
+    if len(compact) == 2 and compact in LANGUAGE_CODES:
+        return compact
+    return None
 
 
 def iter_launch_files(root: Path) -> Iterable[Path]:
-    for path in sorted(root.rglob("*"), key=lambda item: natural_key(str(item.relative_to(root)))):
-        if not path.is_file():
-            continue
-        if ".launch-organizer" in path.parts:
-            continue
-        yield path
+    paths = sorted(root.rglob("*"), key=lambda item: natural_key(str(item.relative_to(root))))
+    for path in paths:
+        if path.is_file() and ".launch-organizer" not in path.parts:
+            yield path
 
 
 def iter_supported_files(root: Path) -> Iterable[Path]:
     for path in iter_launch_files(root):
-        if path.suffix.lower() not in SUPPORTED_EXTENSIONS:
-            continue
-        yield path
+        if path.suffix.lower() in SUPPORTED_EXTENSIONS:
+            yield path
 
 
-def is_system_junk(path: Path) -> bool:
-    return path.name in SYSTEM_JUNK_FILENAMES or path.name.startswith("._")
-
-
-def parse_clipboard_market_order(text: str) -> list[tuple[str, str | None]]:
-    """Extract the first occurrence of each market from a traffic-sheet Country column."""
-    markets: list[tuple[str, str | None]] = []
-    seen: set[tuple[str, str | None]] = set()
-    has_country_header = False
-
+def parse_clipboard_market_order(text: str) -> List[Tuple[str, Optional[str]]]:
+    markets = []  # type: List[Tuple[str, Optional[str]]]
+    seen = set()  # type: Set[Tuple[str, Optional[str]]]
+    has_header = False
     for raw_line in text.splitlines():
         line = raw_line.strip()
         normalized = normalize(line)
         if not line:
             continue
         if normalized in {"country", "manager populates"}:
-            has_country_header = has_country_header or normalized == "country"
+            has_header = has_header or normalized == "country"
             continue
-
-        compact = re.sub(r"[^A-Z]", "", line.upper())
-        market: tuple[str, str | None] | None = None
-        compact_market = market_from_compact_token(compact)
+        compact_market = market_from_compact_token(line)
+        market = None  # type: Optional[Tuple[str, Optional[str]]]
         if compact_market:
-            code, _, language_code, _ = compact_market
-            market = (code, language_code)
+            market = (compact_market[0], compact_market[2])
         elif normalized in COUNTRY_ALIASES:
-            code, _ = COUNTRY_ALIASES[normalized]
-            market = (code, None)
+            market = (COUNTRY_ALIASES[normalized][0], None)
         else:
-            tokens = re.findall(r"\b[A-Z]{2}\b", line.upper())
-            if tokens and tokens[0] in COUNTRY_CODES:
-                language_code = tokens[1] if len(tokens) > 1 and tokens[1] in LANGUAGE_CODES else None
-                market = (tokens[0], language_code)
-
+            codes = re.findall(r"\b[A-Z]{2}\b", line.upper())
+            if codes:
+                country = MARKET_CODE_ALIASES.get(codes[0], codes[0])
+                if country in COUNTRY_CODES:
+                    language = codes[1] if len(codes) > 1 and codes[1] in LANGUAGE_CODES else None
+                    market = (country, language)
         if market and market not in seen:
             seen.add(market)
             markets.append(market)
-
-    # Avoid treating unrelated clipboard text as a traffic-sheet order.
-    return markets if has_country_header or len(markets) > 1 else []
+    return markets if has_header or len(markets) > 1 else []
 
 
-def clipboard_market_order() -> list[tuple[str, str | None]]:
+def clipboard_market_order() -> List[Tuple[str, Optional[str]]]:
     if sys.platform != "darwin":
         return []
     try:
-        result = subprocess.run(
-            ["/usr/bin/pbpaste"],
-            check=False,
-            capture_output=True,
-            text=True,
-        )
+        result = subprocess.run(["/usr/bin/pbpaste"], check=False, capture_output=True, text=True)
     except OSError:
         return []
     return parse_clipboard_market_order(result.stdout) if result.returncode == 0 else []
 
 
-def detect_media_type(parts: list[str], suffix: str) -> tuple[str | None, int | None]:
-    for index, part in enumerate(parts):
-        normalized = normalize(part)
-        if normalized in STATIC_NAMES:
-            return "Static", index
-        if normalized in MOTION_NAMES:
-            return "Motion", index
-    if suffix in STATIC_EXTENSIONS:
-        return "Static", None
-    if suffix in MOTION_EXTENSIONS:
-        return "Motion", None
-    return None, None
+def filename_fields(file_name: str) -> List[str]:
+    return [field.strip() for field in Path(file_name).stem.split("_") if field.strip()]
 
 
-def detect_country_and_language(parts: list[str], file_name: str) -> tuple[str | None, str | None, str | None, str | None]:
-    country_code = None
-    country_name = None
-    language_code = None
-    language_name = None
-
-    for part in parts:
-        match = ORGANIZED_FOLDER_RE.match(part)
-        if match:
-            country_code = match.group("country")
-            language_code = match.group("language")
-            country_name = COUNTRY_NAMES_BY_CODE.get(country_code, country_code)
-            language_name = LANGUAGE_NAMES_BY_CODE.get(language_code, language_code)
-            break
-
-    normalized_parts = [normalize(part) for part in parts]
-    for part, normalized in zip(parts, normalized_parts):
-        part_country_code = country_code_from_token(part)
-        if part_country_code and country_code is None:
-            country_code = part_country_code
-            country_name = COUNTRY_NAMES_BY_CODE[part_country_code]
-        if normalized in COUNTRY_ALIASES and country_code is None:
-            country_code, country_name = COUNTRY_ALIASES[normalized]
-        if normalized in LANGUAGE_ALIASES and language_code is None:
-            language_code, language_name = LANGUAGE_ALIASES[normalized]
-        compact_market = market_from_compact_token(normalized)
-        if compact_market:
-            code, name, lang_code, lang_name = compact_market
-            country_code = country_code or code
-            country_name = country_name or name
-            language_code = language_code or lang_code
-            language_name = language_name or lang_name
-
-    file_tokens = re.findall(r"[A-Z]{4}", file_name.upper())
-    for token in file_tokens:
-        compact_market = market_from_compact_token(token)
-        if compact_market:
-            code, name, lang_code, lang_name = compact_market
-            country_code = country_code or code
-            country_name = country_name or name
-            language_code = language_code or lang_code
-            language_name = language_name or lang_name
-            break
-
-    return country_code, country_name or country_code, language_code, language_name or language_code
-
-
-def detect_creative_name(parts: list[str], asset_folder_index: int | None) -> str | None:
-    ignored = set(STATIC_NAMES | MOTION_NAMES)
-    ignored.update({"regions", "reordenado", "review"})
-
-    for index in range(len(parts) - 1, -1, -1):
-        part = parts[index]
-        normalized = normalize(part)
-        if not normalized:
-            continue
-        if normalized in ignored:
-            continue
-        if is_country_marker(part):
-            continue
-        if normalized in LANGUAGE_ALIASES:
-            continue
-        if market_from_compact_token(normalized):
-            continue
-        if ORGANIZED_FOLDER_RE.match(part):
-            continue
-        if normalized.startswith("regions"):
-            continue
-        return part.strip()
+def media_from_token(token: str) -> Optional[str]:
+    normalized = normalize(token)
+    if normalized in STATIC_NAMES:
+        return "Static"
+    if normalized in MOTION_NAMES:
+        return "Motion"
     return None
 
 
-def is_creative_metadata_part(part: str) -> bool:
-    normalized = normalize(part)
-    return (
+def platform_from_token(token: str) -> Optional[str]:
+    return PLATFORM_ALIASES.get(normalize(token))
+
+
+def out_of_scope_platform_from_token(token: str) -> Optional[str]:
+    normalized = normalize(token)
+    return token.strip() if normalized in OUT_OF_SCOPE_PLATFORMS else None
+
+
+def is_technical_token(token: str) -> bool:
+    normalized = normalize(token)
+    compact = re.sub(r"[^A-Z]", "", token.upper())
+    return bool(
         not normalized
-        or normalized in STATIC_NAMES
-        or normalized in MOTION_NAMES
-        or is_country_marker(part)
-        or normalized in LANGUAGE_ALIASES
-        or market_from_compact_token(normalized) is not None
-        or ORGANIZED_FOLDER_RE.match(part) is not None
+        or media_from_token(token)
+        or platform_from_token(token)
+        or out_of_scope_platform_from_token(token)
+        or market_from_compact_token(token)
+        or country_code_from_token(token)
+        or language_code_from_token(token)
+        or ASPECT_RE.fullmatch(token.strip())
+        or RESOLUTION_RE.fullmatch(token.strip())
+        or DURATION_RE.fullmatch(token.strip())
+        or DATE_RE.fullmatch(token.strip())
+        or PRODUCTION_ID_RE.fullmatch(token.strip())
+        or re.fullmatch(r"(?:static|motion|still|video)\s*\d+", normalized)
+        or (len(compact) >= 6 and any(char.isdigit() for char in compact))
     )
 
 
-def is_generic_asset_folder(part: str) -> bool:
-    """Ignore source-export labels such as 'Motion 11' or 'Static 4'."""
-    return re.fullmatch(r"(?:motion|mot|video|static|stat|image|img)\s*\d+", normalize(part)) is not None
+def descriptor_fields(file_name: str) -> List[str]:
+    runs = []  # type: List[List[str]]
+    current = []  # type: List[str]
+    for token in filename_fields(file_name):
+        if is_technical_token(token):
+            if current:
+                runs.append(current)
+                current = []
+        else:
+            current.append(token.strip())
+    if current:
+        runs.append(current)
+    if not runs:
+        return []
+    return max(runs, key=lambda run: (len(run), sum(len(item) for item in run)))
 
 
-def creative_name_from_file_name(file_name: str) -> str | None:
-    """Recover the creative label when a previous run already flattened its folders."""
-    tokens = Path(file_name).stem.split("_")
-    creative_tokens: list[str] = []
-
-    for token in tokens:
-        compact = re.sub(r"[^A-Z]", "", token.upper())
-        normalized = normalize(token)
-        if re.fullmatch(r"\d{4}-\d{2}-\d{2}|\d+|\d+x\d+", token):
-            continue
-        if (
-            not token
-            or "cta" in normalized
-            or market_from_compact_token(compact) is not None
-            or normalized in {"meta", "tiktok", "tik tok", "tt", "linkedin", "li", "static", "motion", "video", "img"}
-        ):
-            break
-        creative_tokens.append(token)
-
-    return " - ".join(creative_tokens) or None
+def humanize_descriptor(tokens: List[str]) -> str:
+    return " ".join(re.sub(r"\s+", " ", token.replace("-", " ")).strip() for token in tokens).strip()
 
 
-def is_delivery_variant(part: str) -> bool:
-    return "cta" in normalize(part)
+def organized_folder(part: str) -> Optional[re.Match]:
+    return ORGANIZED_FOLDER_RE.fullmatch(part)
 
 
-def clean_creative_label(label: str) -> str:
-    pieces = [piece.strip() for piece in label.split(" - ")]
-    while pieces and market_from_compact_token(re.sub(r"[^A-Z]", "", pieces[-1].upper())):
-        pieces.pop()
-    return " - ".join(pieces)
+def is_technical_path_part(part: str) -> bool:
+    normalized = normalize(part)
+    return bool(
+        not normalized
+        or normalized == "regions"
+        or normalized.startswith("regions ")
+        or media_from_token(part)
+        or platform_from_token(part)
+        or out_of_scope_platform_from_token(part)
+        or market_from_compact_token(part)
+        or normalized in COUNTRY_ALIASES
+        or normalized in LANGUAGE_ALIASES
+        or organized_folder(part)
+        or GENERIC_WRAPPER_RE.fullmatch(normalized)
+        or ASPECT_RE.fullmatch(part.strip())
+        or RESOLUTION_RE.fullmatch(part.strip())
+        or DURATION_RE.fullmatch(part.strip())
+        or DATE_RE.fullmatch(part.strip())
+        or PRODUCTION_ID_RE.fullmatch(part.strip())
+    )
 
 
-def detect_creative_path(parts: list[str], asset_folder_index: int | None, file_name: str) -> list[str]:
-    if asset_folder_index is not None:
-        route_parts = parts[asset_folder_index + 1 :]
-    else:
-        route_parts = parts
-
-    route_parts = [
-        part.strip()
-        for part in route_parts
-        if not is_creative_metadata_part(part) and not is_generic_asset_folder(part)
+def detect_platform(parts: List[str], file_name: str) -> Tuple[Optional[str], str, List[str]]:
+    path_platforms = [platform_from_token(part) for part in parts if platform_from_token(part)]
+    path_out = [out_of_scope_platform_from_token(part) for part in parts if out_of_scope_platform_from_token(part)]
+    filename_platforms = [platform_from_token(field) for field in filename_fields(file_name) if platform_from_token(field)]
+    filename_out = [
+        out_of_scope_platform_from_token(field)
+        for field in filename_fields(file_name)
+        if out_of_scope_platform_from_token(field)
     ]
-    if len(route_parts) >= 2:
-        if is_delivery_variant(route_parts[0]):
-            return [route_parts[0], *[clean_creative_label(part) for part in route_parts[1:]]]
-        # Keep the delivery variation first, then group the related creative pieces together.
-        return [route_parts[-1], " - ".join(route_parts[:-1])]
-    if len(route_parts) == 1:
-        file_name_label = creative_name_from_file_name(file_name)
-        if is_delivery_variant(route_parts[0]) and file_name_label:
-            return [route_parts[0], file_name_label]
-        return route_parts
+    evidence = []  # type: List[str]
+    if path_platforms:
+        evidence.append("source path: " + path_platforms[0])
+        if filename_platforms and filename_platforms[0] != path_platforms[0]:
+            evidence.append("conflicting filename: " + filename_platforms[0])
+        return path_platforms[0], "supported", evidence
+    if path_out:
+        evidence.append("source path: " + str(path_out[0]))
+        return str(path_out[0]), "out_of_scope", evidence
+    if filename_platforms:
+        evidence.append("anchored filename field: " + filename_platforms[0])
+        return filename_platforms[0], "supported", evidence
+    if filename_out:
+        evidence.append("anchored filename field: " + str(filename_out[0]))
+        return str(filename_out[0]), "out_of_scope", evidence
+    return None, "unresolved", evidence
 
-    file_name_label = creative_name_from_file_name(file_name)
-    if file_name_label:
-        return [file_name_label]
 
-    fallback_name = detect_creative_name(parts, asset_folder_index)
-    return [fallback_name] if fallback_name else []
+def detect_market(parts: List[str], file_name: str) -> Tuple[Optional[str], Optional[str], Optional[str], Optional[str], Optional[int], List[str]]:
+    country = None
+    language = None
+    existing_index = None
+    evidence = []  # type: List[str]
+    for part in parts:
+        match = organized_folder(part)
+        if match:
+            country = MARKET_CODE_ALIASES.get(match.group("country").upper(), match.group("country").upper())
+            language = match.group("language")
+            language = language.upper() if language else None
+            existing_index = int(match.group("index"))
+            evidence.append("organized source folder: " + part)
+            break
+    for part in parts:
+        compact = market_from_compact_token(part)
+        if compact:
+            if country is None:
+                country = compact[0]
+                language = compact[2]
+                evidence.append("source path market: " + part)
+            continue
+        normalized = normalize(part)
+        if country is None:
+            path_country = country_code_from_token(part)
+            if path_country:
+                country = path_country
+                evidence.append("source path country: " + part)
+                continue
+        if country is not None and language is None:
+            if normalized in LANGUAGE_ALIASES:
+                language = LANGUAGE_ALIASES[normalized][0]
+                evidence.append("source path language: " + part)
+            elif part.isupper() and language_code_from_token(part):
+                language = language_code_from_token(part)
+                evidence.append("source path language code: " + part)
+    for field in filename_fields(file_name):
+        compact = market_from_compact_token(field)
+        if compact:
+            if country is None:
+                country = compact[0]
+                language = compact[2]
+                evidence.append("anchored filename market: " + field)
+            elif country != compact[0] or (language and language != compact[2]):
+                evidence.append("conflicting filename market ignored: " + field)
+            elif language is None:
+                language = compact[2]
+            break
+    country_name = COUNTRY_NAMES_BY_CODE.get(country) if country else None
+    language_name = LANGUAGE_NAMES_BY_CODE.get(language) if language else None
+    return country, country_name, language, language_name, existing_index, evidence
+
+
+def detect_media(parts: List[str], suffix: str, file_name: str) -> Tuple[Optional[str], List[str]]:
+    evidence = []  # type: List[str]
+    for part in parts:
+        media = media_from_token(part)
+        if media:
+            evidence.append("source path media folder: " + part)
+            extension_media = "Static" if suffix in STATIC_EXTENSIONS else "Motion" if suffix in MOTION_EXTENSIONS else None
+            if extension_media and extension_media != media:
+                evidence.append("conflicting extension ignored: " + suffix)
+            return media, evidence
+        match = organized_folder(part)
+        if match and match.group("asset"):
+            raw_asset = normalize(match.group("asset"))
+            media = "Static" if raw_asset in {"st", "static"} else "Motion"
+            evidence.append("organized market suffix: " + match.group("asset"))
+            return media, evidence
+    for field in filename_fields(file_name):
+        media = media_from_token(field)
+        if media:
+            evidence.append("anchored filename media: " + field)
+            return media, evidence
+    if suffix in STATIC_EXTENSIONS:
+        return "Static", ["file extension: " + suffix]
+    if suffix in MOTION_EXTENSIONS:
+        return "Motion", ["file extension: " + suffix]
+    return None, evidence
+
+
+def enrich_semantic_path(source_semantic: List[str], descriptors: List[str]) -> List[str]:
+    if not source_semantic:
+        label = humanize_descriptor(descriptors)
+        return [label] if label else []
+    result = list(source_semantic)
+    if not descriptors:
+        return result
+    descriptor_words = []  # type: List[str]
+    for field in descriptors:
+        descriptor_words.extend(normalize(field).split())
+    leaf_words = normalize(result[-1]).split()
+    if len(descriptor_words) < len(leaf_words) or descriptor_words[: len(leaf_words)] != leaf_words:
+        return result
+    extras = descriptors
+    consumed = 0
+    while extras and consumed < len(leaf_words):
+        consumed += len(normalize(extras[0]).split())
+        extras = extras[1:]
+    if consumed == len(leaf_words) and extras:
+        suffix = humanize_descriptor(extras)
+        if suffix and normalize(suffix) not in normalize(result[-1]):
+            result[-1] = result[-1] + " - " + suffix
+    return result
 
 
 def parse_record(root: Path, source: Path) -> AssetRecord:
-    relative_source = source.relative_to(root)
-    parts = list(relative_source.parts[:-1])
-    record = AssetRecord(source=source, relative_source=relative_source)
+    relative = source.relative_to(root)
+    parts = list(relative.parts[:-1])
+    record = AssetRecord(source=source, relative_source=relative)
 
-    asset_type, asset_folder_index = detect_media_type(parts, source.suffix.lower())
-    country_code, country_name, language_code, language_name = detect_country_and_language(parts, source.name)
-    creative_path = detect_creative_path(parts, asset_folder_index, source.name)
+    platform, scope, platform_evidence = detect_platform(parts, source.name)
+    record.platform = platform
+    record.scope = scope
+    record.evidence["platform"] = platform_evidence
+    if scope == "out_of_scope":
+        record.confidence = "high"
+        return record
 
-    record.asset_type = asset_type
-    record.asset_folder_index = asset_folder_index
-    record.country_code = country_code
+    country, country_name, language, language_name, existing_index, market_evidence = detect_market(parts, source.name)
+    record.country_code = country
     record.country_name = country_name
-    record.language_code = language_code
+    record.language_code = language
     record.language_name = language_name
-    record.creative_path = creative_path
-    record.creative_name = " / ".join(creative_path) if creative_path else None
+    record.existing_market_index = existing_index
+    record.evidence["market"] = market_evidence
+    if country is None:
+        record.reasons.append("No market evidence")
+    if platform is None:
+        if existing_index is None:
+            record.reasons.append("No supported Meta or TikTok platform evidence")
+        else:
+            record.evidence["platform"] = ["already organized destination; no platform level required"]
 
-    if record.country_code is None:
-        record.reasons.append("No pude detectar el pais")
-    if record.asset_type is None:
-        record.reasons.append("No pude detectar si es Static o Motion")
+    asset_type, media_evidence = detect_media(parts, source.suffix.lower(), source.name)
+    record.asset_type = asset_type
+    record.evidence["mediaType"] = media_evidence
+    if asset_type is None:
+        record.reasons.append("No Static or Motion evidence")
+
+    semantic = []  # type: List[str]
+    ignored = []  # type: List[str]
+    for part in parts:
+        if is_technical_path_part(part):
+            ignored.append(part)
+        else:
+            semantic.append(part.strip())
+    descriptors = descriptor_fields(source.name)
+    record.semantic_source_path = semantic
+    record.ignored_metadata = ignored
+    record.evidence["semanticPath"] = ["source folder: " + item for item in semantic]
+    record.evidence["filenameDescriptors"] = descriptors
+    record.creative_path = enrich_semantic_path(semantic, descriptors)
+    record.creative_name = " / ".join(record.creative_path) if record.creative_path else None
     if not record.creative_path:
-        record.reasons.append("No pude detectar el nombre del creativo")
+        record.reasons.append("No safe semantic creative path")
+
+    if not record.reasons:
+        record.scope = "supported"
+        record.confidence = "high" if semantic else "medium"
+    else:
+        record.scope = "unresolved"
+        record.confidence = "low"
     return record
 
 
 def build_market_labels(
-    records: list[AssetRecord],
-    requested_order: list[tuple[str, str | None]] | None = None,
-) -> tuple[dict[tuple[str, str | None], str], dict[tuple[str, str | None], str]]:
-    languages_per_country: dict[str, set[str]] = defaultdict(set)
-    market_order: list[tuple[str, str | None]] = []
-    seen: set[tuple[str, str | None]] = set()
-
+    records: List[AssetRecord],
+    requested_order: Optional[List[Tuple[str, Optional[str]]]] = None,
+) -> Tuple[Dict[Tuple[str, Optional[str]], str], Dict[Tuple[str, Optional[str]], str]]:
+    markets = sorted(
+        {(record.country_code, record.language_code) for record in records if record.country_code},
+        key=lambda market: (str(market[0]), str(market[1] or "")),
+    )
+    existing_indexes = defaultdict(set)  # type: Dict[Tuple[str, Optional[str]], Set[int]]
     for record in records:
-        if not record.country_code:
-            continue
-        if record.language_code:
-            languages_per_country[record.country_code].add(record.language_code)
         key = (record.country_code, record.language_code)
-        if key not in seen:
-            seen.add(key)
-            market_order.append(key)
+        if record.country_code and record.existing_market_index is not None:
+            existing_indexes[key].add(record.existing_market_index)
 
-    if requested_order:
-        ordered_markets: list[tuple[str, str | None]] = []
+    preserve_existing = bool(markets) and all(len(existing_indexes.get(market, set())) == 1 for market in markets)
+    if preserve_existing:
+        markets.sort(key=lambda market: (next(iter(existing_indexes[market])), str(market[0]), str(market[1] or "")))
+    elif requested_order:
+        ordered = []  # type: List[Tuple[str, Optional[str]]]
         for requested_country, requested_language in requested_order:
-            for market in market_order:
-                country_code, language_code = market
-                if country_code != requested_country:
-                    continue
-                if requested_language is not None and language_code != requested_language:
-                    continue
-                if market not in ordered_markets:
-                    ordered_markets.append(market)
-        remaining_markets = [market for market in market_order if market not in ordered_markets]
-        market_order = ordered_markets + sorted(
-            remaining_markets,
-            key=lambda market: (market[0], market[1] or ""),
-        )
+            matching = [
+                market
+                for market in markets
+                if market[0] == requested_country
+                and (requested_language is None or market[1] == requested_language)
+            ]
+            for market in matching:
+                if market not in ordered:
+                    ordered.append(market)
+        markets = ordered + [market for market in markets if market not in ordered]
 
-    display_map: dict[tuple[str, str | None], str] = {}
-    base_map: dict[tuple[str, str | None], str] = {}
-    width = max(2, len(str(max(1, len(market_order)))))
+    languages_by_country = defaultdict(set)  # type: Dict[str, Set[Optional[str]]]
+    for country, language in markets:
+        if country:
+            languages_by_country[country].add(language)
 
-    for index, (country_code, language_code) in enumerate(market_order, start=1):
-        base_name = f"{index:0{width}d} - {country_code}"
-        if language_code and (
-            country_code in ALWAYS_SHOW_LANGUAGE_CODES
-            or len(languages_per_country[country_code]) > 1
-        ):
-            base_name = f"{base_name} {language_code}"
-        base_map[(country_code, language_code)] = base_name
-        display_map[(country_code, language_code)] = base_name
-
-    return base_map, display_map
+    labels = {}  # type: Dict[Tuple[str, Optional[str]], str]
+    for position, market in enumerate(markets, start=1):
+        country, language = market
+        index = next(iter(existing_indexes[market])) if preserve_existing else position
+        label = str(index) + " - " + str(country)
+        if language and (country in ALWAYS_SHOW_LANGUAGE_CODES or len(languages_by_country[country]) > 1):
+            label += " " + language
+        labels[market] = label
+    return labels, dict(labels)
 
 
 def destination_for_record(
     root: Path,
     record: AssetRecord,
-    base_map: dict[tuple[str, str | None], str],
-    asset_types_by_market: dict[tuple[str, str | None], set[str]],
-) -> Path | None:
+    base_map: Dict[Tuple[str, Optional[str]], str],
+    asset_types_by_market: Dict[Tuple[str, Optional[str]], Set[str]],
+    include_platform: bool = False,
+) -> Optional[Path]:
     if not (record.country_code and record.asset_type and record.creative_path):
         return None
-
     key = (record.country_code, record.language_code)
     market_folder = base_map[key]
     asset_types = asset_types_by_market[key]
-    if asset_types == {"Static"}:
-        market_folder = f"{market_folder} - St"
-        relative_destination = Path(market_folder, *record.creative_path, record.source.name)
-    elif asset_types == {"Motion"}:
-        market_folder = f"{market_folder} - Mt"
-        relative_destination = Path(market_folder, *record.creative_path, record.source.name)
+    parts = [market_folder]  # type: List[str]
+    if len(asset_types) == 1:
+        parts[0] += " - " + record.asset_type
     else:
-        relative_destination = Path(market_folder, record.asset_type, *record.creative_path, record.source.name)
-    return root / relative_destination
+        parts.append(record.asset_type)
+    if include_platform and record.platform:
+        parts.append(record.platform)
+    parts.extend(record.creative_path)
+    parts.append(record.source.name)
+    return root.joinpath(*parts)
 
 
-def ensure_unique_destination(source: Path, destination: Path) -> Path:
-    if source == destination:
-        return destination
-    if not destination.exists():
-        return destination
-    stem = destination.stem
-    suffix = destination.suffix
-    counter = 2
-    while True:
-        candidate = destination.with_name(f"{stem} ({counter}){suffix}")
-        if not candidate.exists():
-            return candidate
-        counter += 1
-
-
-def remove_empty_directories(root: Path) -> None:
-    paths = sorted((path for path in root.rglob("*") if path.is_dir()), key=lambda item: len(item.parts), reverse=True)
-    for path in paths:
-        if path.name == ".launch-organizer":
-            continue
-        try:
-            next(path.iterdir())
-        except StopIteration:
-            path.rmdir()
-
-
-def remove_system_junk_files(root: Path) -> None:
-    for path in iter_launch_files(root):
-        if is_system_junk(path):
-            path.unlink()
-
-
-def clear_old_undo_records(metadata_dir: Path) -> None:
-    """Keep only the one undo record for the most recent organization."""
-    for pattern in ("plan-*.json", "undo-*.json", "undo-applied-*.json"):
-        for path in metadata_dir.glob(pattern):
-            path.unlink()
-
-
-def write_json(path: Path, payload: dict) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(payload, indent=2, ensure_ascii=True), encoding="utf-8")
+def move_preview(record: AssetRecord, root: Path) -> Dict[str, object]:
+    destination = record.destination
+    assert destination is not None
+    return {
+        "action": "stay" if destination == record.source else "move",
+        "assetType": record.asset_type,
+        "confidence": record.confidence,
+        "creativeName": record.creative_name,
+        "creativePath": list(record.creative_path),
+        "destination": str(destination),
+        "evidence": dict(record.evidence),
+        "ignoredMetadata": list(record.ignored_metadata),
+        "language": record.language_code,
+        "market": record.country_code,
+        "marketKey": " ".join(item for item in [record.country_code, record.language_code] if item),
+        "mediaType": record.asset_type,
+        "platform": record.platform,
+        "relativeDestination": destination.relative_to(root).as_posix(),
+        "relativeSource": record.relative_source.as_posix(),
+        "semanticPath": list(record.semantic_source_path),
+        "source": str(record.source),
+    }
 
 
 def build_plan(
     root: Path,
-    requested_order: list[tuple[str, str | None]] | None = None,
-) -> tuple[list[AssetRecord], list[dict], list[AssetRecord], dict]:
+    requested_order: Optional[List[Tuple[str, Optional[str]]]] = None,
+) -> Tuple[List[AssetRecord], List[Dict[str, object]], List[AssetRecord], Dict[str, object]]:
     all_files = list(iter_launch_files(root))
-    records = [parse_record(root, file_path) for file_path in all_files if file_path.suffix.lower() in SUPPORTED_EXTENSIONS]
-    resolved = [record for record in records if not record.reasons]
-    unresolved = [record for record in records if record.reasons]
+    supported_files = [path for path in all_files if path.suffix.lower() in SUPPORTED_EXTENSIONS]
+    records = [parse_record(root, path) for path in supported_files]
+    candidates = [record for record in records if record.scope == "supported" and not record.reasons]
+    unresolved = [record for record in records if record.scope == "unresolved"]
+    out_of_scope = [record for record in records if record.scope == "out_of_scope"]
 
-    base_map, display_map = build_market_labels(resolved, requested_order)
-    asset_types_by_market: dict[tuple[str, str | None], set[str]] = defaultdict(set)
-    for record in resolved:
-        asset_types_by_market[(record.country_code, record.language_code)].add(record.asset_type)
+    base_map, display_map = build_market_labels(candidates, requested_order)
+    asset_types_by_market = defaultdict(set)  # type: Dict[Tuple[str, Optional[str]], Set[str]]
+    for record in candidates:
+        asset_types_by_market[(record.country_code, record.language_code)].add(str(record.asset_type))
+    for record in candidates:
+        record.destination = destination_for_record(root, record, base_map, asset_types_by_market)
 
-    moves: list[dict] = []
-    for record in resolved:
-        destination = destination_for_record(root, record, base_map, asset_types_by_market)
-        if destination is None:
+    destination_groups = defaultdict(list)  # type: Dict[str, List[AssetRecord]]
+    for record in candidates:
+        if record.destination:
+            destination_groups[str(record.destination)].append(record)
+    for group in destination_groups.values():
+        platforms = {record.platform for record in group}
+        if len(group) > 1 and len(platforms) == len(group) and None not in platforms:
+            for record in group:
+                record.destination = destination_for_record(
+                    root, record, base_map, asset_types_by_market, include_platform=True
+                )
+
+    destination_groups = defaultdict(list)
+    for record in candidates:
+        if record.destination:
+            destination_groups[str(record.destination)].append(record)
+    conflicted = set()  # type: Set[int]
+    for group in destination_groups.values():
+        if len(group) > 1:
+            for record in group:
+                record.reasons.append("Destination collision could not be resolved safely")
+                record.confidence = "low"
+                record.scope = "unresolved"
+                conflicted.add(id(record))
+
+    for record in candidates:
+        if id(record) in conflicted or record.destination is None or record.destination == record.source:
             continue
-        moves.append(
-            {
-                "assetType": record.asset_type,
-                "creativeName": record.creative_name,
-                "marketKey": " ".join(part for part in [record.country_code, record.language_code] if part),
-                "relativeSource": record.relative_source.as_posix(),
-                "relativeDestination": destination.relative_to(root).as_posix(),
-                "source": str(record.source),
-                "destination": str(destination),
-            }
-        )
+        if record.destination.exists():
+            if files_are_identical(record.source, record.destination):
+                record.reasons.append("Byte-identical duplicate preserved at both source and destination")
+            else:
+                record.reasons.append("Existing destination collision; no overwrite performed")
+            record.confidence = "low"
+            record.scope = "unresolved"
+            conflicted.add(id(record))
 
-    unresolved_sources = {record.source for record in unresolved}
-    other_files = [
-        file_path
-        for file_path in all_files
-        if not is_system_junk(file_path)
-        and (file_path.suffix.lower() not in SUPPORTED_EXTENSIONS or file_path in unresolved_sources)
-    ]
-    for file_path in other_files:
-        moves.append(
-            {
-                "assetType": "Other",
-                "creativeName": "Otros",
-                "marketKey": "",
-                "relativeSource": file_path.relative_to(root).as_posix(),
-                "relativeDestination": (Path("Otros") / file_path.name).as_posix(),
-                "source": str(file_path),
-                "destination": str(root / "Otros" / file_path.name),
-            }
-        )
+    unresolved.extend(record for record in candidates if id(record) in conflicted)
+    planned_records = [record for record in candidates if id(record) not in conflicted]
+    moves = [move_preview(record, root) for record in planned_records]
 
+    unsupported = [path for path in all_files if path.suffix.lower() not in SUPPORTED_EXTENSIONS]
+    untouched = [record.relative_source.as_posix() for record in out_of_scope]
+    untouched.extend(path.relative_to(root).as_posix() for path in unsupported)
+    untouched.sort(key=natural_key)
     summary = {
-        "totalFiles": len(all_files),
-        "resolvedFiles": len(resolved),
-        "unresolvedFiles": 0,
-        "otherFiles": len(other_files),
+        "clipboardOrderUsed": bool(requested_order),
         "marketCount": len(base_map),
         "markets": [re.sub(r"^\d+\s*-\s*", "", label) for label in display_map.values()],
-        "clipboardOrderUsed": bool(requested_order),
-        "systemJunk": [file_path.relative_to(root).as_posix() for file_path in all_files if is_system_junk(file_path)],
+        "otherFiles": 0,
+        "resolvedFiles": len(planned_records),
+        "systemJunk": [],
+        "totalFiles": len(all_files),
+        "unresolvedFiles": len(unresolved),
+        "untouchedFiles": len(untouched),
+        "untouched": untouched,
     }
     return records, moves, unresolved, summary
 
 
-def print_summary(root: Path, summary: dict, moves: list[dict], unresolved: list[AssetRecord]) -> None:
-    print()
-    print(f"Carpeta: {root}")
-    print(f"Archivos detectados: {summary['totalFiles']}")
-    print(f"Archivos listos para mover: {summary['resolvedFiles']}")
-    print(f"Archivos sin resolver: {summary['unresolvedFiles']}")
-    print(f"Mercados detectados: {', '.join(summary['markets']) or 'ninguno'}")
-
+def print_summary(root: Path, summary: Dict[str, object], moves: List[Dict[str, object]], unresolved: List[AssetRecord]) -> None:
+    print("\nCarpeta: " + str(root))
+    print("Archivos detectados: " + str(summary["totalFiles"]))
+    print("Archivos listos: " + str(summary["resolvedFiles"]))
+    print("Archivos sin resolver: " + str(summary["unresolvedFiles"]))
+    print("Archivos fuera de alcance, sin tocar: " + str(summary["untouchedFiles"]))
+    print("Mercados detectados: " + (", ".join(summary["markets"]) if summary["markets"] else "ninguno"))
     if moves:
-        print()
-        print("Primeros destinos:")
-        shown = set()
+        print("\nPreview completo:")
         for move in moves:
-            destination = move["relativeDestination"]
-            preview = "/".join(destination.split("/")[:3])
-            if preview in shown:
-                continue
-            shown.add(preview)
-            print(f"  - {preview}")
-            if len(shown) >= 8:
-                break
-
-    if summary["otherFiles"]:
-        print(f"Archivos enviados a Otros: {summary['otherFiles']}")
+            print("  " + str(move["action"]).upper() + ": " + str(move["relativeSource"]))
+            print("    -> " + str(move["relativeDestination"]))
+            print(
+                "    market={market} language={language} platform={platform} media={mediaType} confidence={confidence}".format(
+                    **move
+                )
+            )
+            print("    semantic=" + "/".join(move["semanticPath"]) + " ignored=" + ", ".join(move["ignoredMetadata"]))
+            print("    evidence=" + json.dumps(move["evidence"], ensure_ascii=False, sort_keys=True))
+    if unresolved:
+        print("\nSin resolver (no se mueven):")
+        for record in unresolved:
+            print("  " + record.relative_source.as_posix() + ": " + "; ".join(record.reasons))
+            print("    evidence=" + json.dumps(record.evidence, ensure_ascii=False, sort_keys=True))
+    if summary["untouched"]:
+        print("\nFuera de alcance (sin tocar):")
+        for relative in summary["untouched"]:
+            print("  " + str(relative))
 
 
 def unlock_for_move(path: Path, root: Path) -> None:
-    """Clear Finder's Locked flag from an asset and its parent folders."""
     paths = [path]
     current = path.parent
     while True:
@@ -705,22 +774,19 @@ def unlock_for_move(path: Path, root: Path) -> None:
         if current == root:
             break
         current = current.parent
-
     try:
         for item in paths:
             item_stat = item.stat()
-            if item_stat.st_flags & stat.UF_IMMUTABLE:
-                os.chflags(item, item_stat.st_flags & ~stat.UF_IMMUTABLE)
+            flags = getattr(item_stat, "st_flags", 0)
+            if flags & getattr(stat, "UF_IMMUTABLE", 0):
+                os.chflags(item, flags & ~stat.UF_IMMUTABLE)
             if not item_stat.st_mode & stat.S_IWUSR:
                 item.chmod(item_stat.st_mode | stat.S_IWUSR)
     except OSError as error:
-        raise OrganizationError(
-            f"No pude desbloquear '{path.name}'. Cerralo si esta abierto e intenta de nuevo."
-        ) from error
+        raise OrganizationError("No pude desbloquear '" + path.name + "'. Cerralo e intenta de nuevo.") from error
 
 
 def files_are_identical(first: Path, second: Path) -> bool:
-    """Only remove a duplicate source when its destination is byte-for-byte equal."""
     try:
         if first.stat().st_size != second.stat().st_size:
             return False
@@ -736,303 +802,282 @@ def files_are_identical(first: Path, second: Path) -> bool:
         return False
 
 
-def rollback_moves(root: Path, applied_moves: list[dict]) -> None:
-    """Leave the launch as it was if any single move cannot be completed."""
-    for move in reversed(applied_moves):
-        source = root / move["to"]
-        destination = root / move["from"]
-        if not source.exists():
-            continue
-        unlock_for_move(source, root)
-        destination.parent.mkdir(parents=True, exist_ok=True)
-        shutil.move(str(source), str(destination))
-    remove_empty_directories(root)
-
-
-def apply_plan(root: Path, moves: list[dict], unresolved: list[AssetRecord], system_junk: list[str]) -> Path:
-    stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
-    metadata_dir = root / ".launch-organizer"
-    metadata_dir.mkdir(exist_ok=True)
-    clear_old_undo_records(metadata_dir)
-    undo_path = metadata_dir / "undo-last.json"
-
-    applied_moves: list[dict] = []
-    current_source: Path | None = None
-    try:
-        for move in moves:
-            source = root / move["relativeSource"]
-            current_source = source
-            planned_destination = root / move["relativeDestination"]
-            if source == planned_destination:
-                continue
-
-            unlock_for_move(source, root)
-            if planned_destination.exists() and files_are_identical(source, planned_destination):
-                source.unlink()
-                destination = planned_destination
-            else:
-                destination = ensure_unique_destination(source, planned_destination)
-                destination.parent.mkdir(parents=True, exist_ok=True)
-                shutil.move(str(source), str(destination))
-
-            applied_moves.append(
-                {
-                    "from": move["relativeSource"],
-                    "to": destination.relative_to(root).as_posix(),
-                }
-            )
-    except (OSError, OrganizationError) as error:
+def prune_source_ancestors(root: Path, relative_sources: List[str]) -> List[str]:
+    removed = []  # type: List[str]
+    candidates = set()  # type: Set[Path]
+    for relative_source in relative_sources:
+        current = (root / relative_source).parent
+        while current != root:
+            candidates.add(current)
+            current = current.parent
+    directories = sorted(
+        candidates,
+        key=lambda path: len(path.parts),
+        reverse=True,
+    )
+    for path in directories:
         try:
-            rollback_moves(root, applied_moves)
+            next(path.iterdir())
+        except StopIteration:
+            removed.append(path.relative_to(root).as_posix())
+            path.rmdir()
+    return removed
+
+
+def missing_parent_directories(path: Path, root: Path) -> List[str]:
+    missing = []  # type: List[str]
+    current = path.parent
+    while current != root and not current.exists():
+        missing.append(current.relative_to(root).as_posix())
+        current = current.parent
+    return missing
+
+
+def remove_created_directories(root: Path, relative_paths: List[str]) -> None:
+    for relative in sorted(relative_paths, key=lambda value: len(Path(value).parts), reverse=True):
+        path = root / relative
+        try:
+            path.rmdir()
         except OSError:
             pass
+
+
+def restore_directories(root: Path, relative_paths: List[str]) -> None:
+    for relative in sorted(relative_paths, key=lambda value: len(Path(value).parts)):
+        (root / relative).mkdir(parents=True, exist_ok=True)
+
+
+def rollback_moves(
+    root: Path,
+    applied_moves: List[Dict[str, str]],
+    removed_directories: Optional[List[str]] = None,
+    created_directories: Optional[List[str]] = None,
+) -> None:
+    for move in reversed(applied_moves):
+        organized = root / move["to"]
+        original = root / move["from"]
+        if not organized.exists():
+            continue
+        if original.exists():
+            raise OrganizationError("Rollback collision at " + move["from"])
+        unlock_for_move(organized, root)
+        original.parent.mkdir(parents=True, exist_ok=True)
+        shutil.move(str(organized), str(original))
+    remove_created_directories(root, created_directories or [])
+    restore_directories(root, removed_directories or [])
+
+
+def write_json_atomic(path: Path, payload: Dict[str, object]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = path.with_name(path.name + ".tmp")
+    temporary.write_text(json.dumps(payload, indent=2, ensure_ascii=True), encoding="utf-8")
+    os.replace(str(temporary), str(path))
+
+
+def apply_plan(
+    root: Path,
+    moves: List[Dict[str, object]],
+    unresolved: List[AssetRecord],
+    system_junk: List[str],
+) -> Path:
+    del unresolved, system_junk
+    executable = []  # type: List[Tuple[Path, Path, Dict[str, object]]]
+    seen_destinations = set()  # type: Set[Path]
+    for move in moves:
+        source = root / str(move["relativeSource"])
+        destination = root / str(move["relativeDestination"])
+        if source == destination:
+            continue
+        if not source.exists():
+            raise OrganizationError("No existe el archivo planeado: " + str(move["relativeSource"]))
+        if destination.exists():
+            raise OrganizationError("El destino ya existe; no se sobrescribio: " + str(move["relativeDestination"]))
+        if destination in seen_destinations:
+            raise OrganizationError("Dos archivos comparten destino: " + str(move["relativeDestination"]))
+        seen_destinations.add(destination)
+        executable.append((source, destination, move))
+
+    metadata_dir = root / ".launch-organizer"
+    undo_path = metadata_dir / "undo-last.json"
+    if not executable:
+        if not undo_path.exists():
+            write_json_atomic(
+                undo_path,
+                {"createdAt": datetime.now().isoformat(timespec="seconds"), "root": str(root), "moves": [], "removedDirectories": []},
+            )
+        return undo_path
+
+    applied = []  # type: List[Dict[str, str]]
+    removed_directories = []  # type: List[str]
+    created_directories = []  # type: List[str]
+    metadata_dir_existed = metadata_dir.exists()
+    try:
+        for source, destination, move in executable:
+            unlock_for_move(source, root)
+            created_directories.extend(missing_parent_directories(destination, root))
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            shutil.move(str(source), str(destination))
+            applied.append(
+                {"from": str(move["relativeSource"]), "to": str(move["relativeDestination"])}
+            )
+        removed_directories = prune_source_ancestors(
+            root, [str(move["relativeSource"]) for move in moves if move["action"] == "move"]
+        )
+        write_json_atomic(
+            undo_path,
+            {
+                "createdAt": datetime.now().isoformat(timespec="seconds"),
+                "root": str(root),
+                "moves": applied,
+                "removedDirectories": removed_directories,
+                "createdDirectories": sorted(set(created_directories), key=natural_key),
+            },
+        )
+    except (OSError, OrganizationError) as error:
+        try:
+            rollback_moves(root, applied, removed_directories, created_directories)
+        except (OSError, OrganizationError) as rollback_error:
+            raise OrganizationError("Fallo la organizacion y tambien el rollback: " + str(rollback_error)) from error
+        try:
+            undo_path.with_name(undo_path.name + ".tmp").unlink()
+        except OSError:
+            pass
+        if not metadata_dir_existed:
+            try:
+                metadata_dir.rmdir()
+            except OSError:
+                pass
         if isinstance(error, OrganizationError):
-            raise error
-        file_label = current_source.name if current_source else "un archivo"
-        raise OrganizationError(
-            f"No pude mover '{file_label}'. La carpeta volvio a su estado anterior. "
-            "Cerra ese archivo si esta abierto e intenta de nuevo."
-        ) from error
-
-    remove_system_junk_files(root)
-
-    remove_empty_directories(root)
-
-    write_json(
-        undo_path,
-        {
-            "createdAt": stamp,
-            "root": str(root),
-            "moves": applied_moves,
-        },
-    )
+            raise
+        raise OrganizationError("No pude completar la organizacion; restaure los movimientos aplicados.") from error
     return undo_path
 
 
-def undo_last(root: Path) -> Path | None:
-    metadata_dir = root / ".launch-organizer"
-    undo_path = metadata_dir / "undo-last.json"
+def undo_last(root: Path) -> Optional[Path]:
+    undo_path = root / ".launch-organizer" / "undo-last.json"
     if not undo_path.exists():
         return None
-
-    payload = json.loads(undo_path.read_text(encoding="utf-8"))
+    try:
+        payload = json.loads(undo_path.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as error:
+        raise OrganizationError("El registro de undo no es legible.") from error
     moves = payload.get("moves", [])
-    for move in reversed(moves):
-        source = root / move["to"]
-        destination = root / move["from"]
-        if not source.exists():
-            continue
-        destination.parent.mkdir(parents=True, exist_ok=True)
-        shutil.move(str(source), str(destination))
+    if not isinstance(moves, list):
+        raise OrganizationError("El registro de undo no es valido.")
 
-    remove_system_junk_files(root)
-    remove_empty_directories(root)
+    pending = []  # type: List[Tuple[Path, Path, Dict[str, str]]]
+    for move in reversed(moves):
+        organized = root / move["to"]
+        original = root / move["from"]
+        if organized.exists() and not original.exists():
+            pending.append((organized, original, move))
+        elif original.exists() and not organized.exists():
+            continue
+        elif organized.exists() and original.exists():
+            raise OrganizationError("Undo detenido para evitar sobrescribir: " + move["from"])
+        else:
+            raise OrganizationError("Undo detenido: faltan ambos lados de " + move["from"])
+
+    reversed_moves = []  # type: List[Dict[str, str]]
+    try:
+        for organized, original, move in pending:
+            unlock_for_move(organized, root)
+            original.parent.mkdir(parents=True, exist_ok=True)
+            shutil.move(str(organized), str(original))
+            reversed_moves.append(move)
+        remove_created_directories(root, payload.get("createdDirectories", []))
+        restore_directories(root, payload.get("removedDirectories", []))
+    except (OSError, OrganizationError) as error:
+        for move in reversed(reversed_moves):
+            original = root / move["from"]
+            organized = root / move["to"]
+            organized.parent.mkdir(parents=True, exist_ok=True)
+            shutil.move(str(original), str(organized))
+        raise OrganizationError("No pude completar el undo; restaure su estado anterior.") from error
+
     undo_path.unlink()
+    try:
+        undo_path.parent.rmdir()
+    except OSError:
+        pass
     return undo_path
 
 
 def clean_dragged_path(raw_value: str) -> str:
     value = raw_value.strip()
-    if value.startswith("'") and value.endswith("'"):
-        value = value[1:-1]
-    if value.startswith('"') and value.endswith('"'):
+    if len(value) >= 2 and value[0] == value[-1] and value[0] in {"'", '"'}:
         value = value[1:-1]
     return value.replace("\\ ", " ")
 
 
-def build_summary_message(root: Path, summary: dict, unresolved: list[AssetRecord]) -> str:
+def build_summary_message(root: Path, summary: Dict[str, object], unresolved: List[AssetRecord]) -> str:
     lines = [
-        "Organizacion terminada.",
-        f"Mercados detectados: {', '.join(summary['markets']) or 'ninguno'}",
+        "Carpeta: " + root.name,
+        "Mercados detectados: " + (", ".join(summary["markets"]) if summary["markets"] else "ninguno"),
+        "Archivos listos: " + str(summary["resolvedFiles"]),
+        "Sin resolver: " + str(len(unresolved)),
+        "Fuera de alcance, sin tocar: " + str(summary["untouchedFiles"]),
     ]
-    if unresolved:
-        lines.append("")
-        lines.append("Hay archivos para revisar.")
     return "\n".join(lines)
-
-
-def run_macos_dialog(script: str, *arguments: str) -> str | None:
-    """Run a native macOS dialog without creating a second app window."""
-    try:
-        result = subprocess.run(
-            ["/usr/bin/osascript", "-e", script, *arguments],
-            check=False,
-            capture_output=True,
-            text=True,
-        )
-    except OSError:
-        return None
-    if result.returncode != 0:
-        return None
-    return result.stdout.strip()
-
-
-def display_macos_message(message: str, title: str = "Organizador de Lanzamientos") -> None:
-    run_macos_dialog(
-        '''on run argv
-display dialog (item 1 of argv) buttons {"Cerrar"} default button "Cerrar" with title (item 2 of argv)
-end run''',
-        message,
-        title,
-    )
-
-
-def gui_mode() -> int | None:
-    if sys.platform != "darwin":
-        return None
-
-    folder_path = run_macos_dialog(
-        '''try
-set selectedFolder to choose folder with prompt "Elegi la carpeta del lanzamiento" default location (path to desktop folder)
-return POSIX path of selectedFolder
-on error number -128
-return ""
-end try'''
-    )
-    if not folder_path:
-        return 0
-
-    root = Path(folder_path).resolve()
-    if not root.is_dir():
-        display_macos_message("No encontre esa carpeta. Intenta de nuevo.")
-        return 1
-
-    action = run_macos_dialog(
-        '''on run argv
-set folderName to item 1 of argv
-set response to display dialog "Carpeta elegida: " & folderName & "\n\nQue queres hacer?" buttons {"Cancelar", "Preview", "Undo", "Ordenar"} default button "Ordenar" cancel button "Cancelar" with title "Organizador de Lanzamientos"
-return button returned of response
-end run''',
-        root.name,
-    )
-    if not action:
-        return 0
-
-    if action == "Undo":
-        confirmation = run_macos_dialog(
-            '''set response to display dialog "Esto revierte la ultima organizacion hecha en esta carpeta." buttons {"Cancelar", "Deshacer"} default button "Deshacer" cancel button "Cancelar" with title "Deshacer organizacion"
-return button returned of response'''
-        )
-        if confirmation != "Deshacer":
-            return 0
-        undone = undo_last(root)
-        if undone is None:
-            display_macos_message("No encontre una organizacion anterior para deshacer.", "Sin Undo")
-            return 0
-        display_macos_message("Undo aplicado.", "Listo")
-        return 0
-
-    _, moves, unresolved, summary = build_plan(root, clipboard_market_order())
-    message = build_summary_message(root, summary, unresolved)
-    if action == "Preview":
-        display_macos_message(message + "\n\nNo movi ningun archivo.", "Preview")
-        return 0
-
-    confirmation = run_macos_dialog(
-        '''on run argv
-set response to display dialog (item 1 of argv) buttons {"Cancelar", "Ordenar"} default button "Ordenar" cancel button "Cancelar" with title "Confirmar organizacion"
-return button returned of response
-end run''',
-        message + "\n\nVoy a mover y renombrar archivos dentro de esta carpeta. Queres seguir?",
-    )
-    if confirmation != "Ordenar":
-        return 0
-
-    apply_plan(root, moves, unresolved, summary["systemJunk"])
-    final_message = "Listo. Reordene la carpeta sin duplicar archivos."
-    if unresolved:
-        final_message += f"\nQuedaron {len(unresolved)} archivos para revisar."
-    display_macos_message(final_message, "Organizacion terminada")
-    return 0
 
 
 def ask_root_path() -> Path:
     while True:
-        raw_value = input("Arrastra la carpeta del lanzamiento aca y apreta Enter:\n> ")
-        root = Path(clean_dragged_path(raw_value)).expanduser()
+        root = Path(clean_dragged_path(input("Arrastra la carpeta del lanzamiento aca y apreta Enter:\n> "))).expanduser()
         if root.exists() and root.is_dir():
             return root.resolve()
         print("No encontre esa carpeta. Probemos de nuevo.\n")
 
 
 def interactive_mode() -> int:
-    print("Organizador de lanzamientos")
-    print("---------------------------")
-    gui_result = gui_mode()
-    if gui_result is not None:
-        return gui_result
-
     root = ask_root_path()
-    action = input("\nElegi una accion: [A]plicar, [P]review, [U]ndo ultima corrida (default A)\n> ").strip().lower() or "a"
-
+    action = input("\nElegi: [A]plicar, [P]review, [U]ndo (default A)\n> ").strip().lower() or "a"
     if action.startswith("u"):
         undone = undo_last(root)
-        print()
-        if undone is None:
-            print("No encontre un undo para esa carpeta.")
-            return 1
-        print(f"Undo aplicado. Archivo usado: {undone}")
-        return 0
-
+        print("Undo aplicado." if undone else "No encontre un undo para esa carpeta.")
+        return 0 if undone else 1
     _, moves, unresolved, summary = build_plan(root, clipboard_market_order())
     print_summary(root, summary, moves, unresolved)
-
     if action.startswith("p"):
         print("\nPreview listo. No movi nada.")
         return 0
-
-    confirm = input("\nVoy a mover y renombrar estos archivos. Seguir? [y/N]\n> ").strip().lower()
-    if confirm != "y":
-        print("Cancelado.")
+    if input("\nAplicar este plan? [y/N]\n> ").strip().lower() != "y":
         return 0
-
     undo_path = apply_plan(root, moves, unresolved, summary["systemJunk"])
-    print()
-    print("Listo. Reordene la carpeta sin duplicar archivos.")
-    print(f"Undo guardado en: {undo_path}")
-    if unresolved:
-        print(f"Atencion: quedaron {len(unresolved)} archivos para revisar.")
+    print("\nListo. Undo guardado en: " + str(undo_path))
     return 0
 
 
-def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Reordena carpetas de lanzamientos sin duplicar archivos.")
-    parser.add_argument("--root", help="Carpeta del lanzamiento a ordenar")
-    parser.add_argument("--preview", action="store_true", help="Muestra el plan sin mover nada")
+def main(argv: Optional[List[str]] = None) -> int:
+    parser = argparse.ArgumentParser(description="Ordena Meta y TikTok con preview y undo reversibles.")
+    parser.add_argument("--root", help="Carpeta madre del lanzamiento")
+    parser.add_argument("--preview", action="store_true", help="Muestra el plan sin escribir")
     parser.add_argument("--apply", action="store_true", help="Aplica el plan")
     parser.add_argument("--undo", action="store_true", help="Revierte la ultima corrida")
     parser.add_argument("--interactive", action="store_true", help="Modo interactivo")
     args = parser.parse_args(argv)
-
     if args.interactive or not any([args.root, args.preview, args.apply, args.undo]):
         return interactive_mode()
-
     if not args.root:
         print("Falta --root", file=sys.stderr)
         return 2
-
     root = Path(args.root).expanduser().resolve()
-    if not root.exists() or not root.is_dir():
-        print(f"No existe la carpeta: {root}", file=sys.stderr)
+    if not root.is_dir():
+        print("No existe la carpeta: " + str(root), file=sys.stderr)
         return 2
-
     if args.undo:
         undone = undo_last(root)
         if undone is None:
             print("No encontre un undo para esa carpeta.", file=sys.stderr)
             return 1
-        print(undone)
+        print(str(undone))
         return 0
-
     _, moves, unresolved, summary = build_plan(root, clipboard_market_order())
     print_summary(root, summary, moves, unresolved)
-
     if args.preview or not args.apply:
         return 0
-
     undo_path = apply_plan(root, moves, unresolved, summary["systemJunk"])
-    print()
-    print(f"Undo guardado en: {undo_path}")
+    print("\nUndo guardado en: " + str(undo_path))
     return 0
 
 

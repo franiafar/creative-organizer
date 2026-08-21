@@ -16,14 +16,34 @@ jobs:
       - name: Check out the release version
         uses: actions/checkout@v4
 
+      - name: Verify tag and application version
+        run: |
+          APP_VERSION="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' 'Creative Organizer.app/Contents/Info.plist')"
+          test "v${APP_VERSION}" = "$GITHUB_REF_NAME"
+
+      - name: Run taxonomy regression tests
+        run: python3 -m unittest discover -s tests -v
+
+      - name: Build and verify the application
+        run: ./scripts/build_app.sh
+
       - name: Package the application
         run: |
           ditto -c -k --sequesterRsrc --keepParent "Creative Organizer.app" Creative-Organizer.zip
+          shasum -a 256 Creative-Organizer.zip > Creative-Organizer.zip.sha256
+
+      - name: Verify the packaged application
+        run: |
+          mkdir packaged-app
+          ditto -x -k Creative-Organizer.zip packaged-app
+          codesign --verify --deep --strict --verbose=2 "packaged-app/Creative Organizer.app"
+          "packaged-app/Creative Organizer.app/Contents/Resources/Python3.framework/Versions/Current/bin/python3" \
+            "packaged-app/Creative Organizer.app/Contents/Resources/ordenar_lanzamiento.py" --help
 
       - name: Publish the release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "$GITHUB_REF_NAME" Creative-Organizer.zip \
+          gh release create "$GITHUB_REF_NAME" Creative-Organizer.zip Creative-Organizer.zip.sha256 \
             --title "Creative Organizer $GITHUB_REF_NAME" \
-            --notes "Descarga Creative-Organizer.zip, descomprimelo y abre la aplicacion."
+            --notes "Taxonomia protegida para Meta y TikTok, jerarquias flexibles y preview obligatorio. Descarga Creative-Organizer.zip, descomprimelo y abre la aplicacion."

@@ -2,6 +2,7 @@
 
 typedef NS_ENUM(NSInteger, OrganizerAction) {
     OrganizerActionOrganize,
+    OrganizerActionPreview,
     OrganizerActionUndo,
     OrganizerActionCancel,
 };
@@ -33,14 +34,58 @@ static OrganizerAction ChooseAction(void) {
     alert.messageText = @"Organizador de Lanzamientos";
     alert.informativeText = @"Que queres hacer?";
     [alert addButtonWithTitle:@"Ordenar"];
+    [alert addButtonWithTitle:@"Preview"];
     [alert addButtonWithTitle:@"Deshacer el ordenamiento anterior"];
     [alert addButtonWithTitle:@"Salir"];
 
     switch ([alert runModal]) {
         case NSAlertFirstButtonReturn: return OrganizerActionOrganize;
-        case NSAlertSecondButtonReturn: return OrganizerActionUndo;
+        case NSAlertSecondButtonReturn: return OrganizerActionPreview;
+        case NSAlertThirdButtonReturn: return OrganizerActionUndo;
         default: return OrganizerActionCancel;
     }
+}
+
+static NSScrollView *PreviewView(NSString *output) {
+    NSRect frame = NSMakeRect(0, 0, 760, 420);
+    NSScrollView *scrollView = [[NSScrollView alloc] initWithFrame:frame];
+    scrollView.hasVerticalScroller = YES;
+    scrollView.hasHorizontalScroller = YES;
+    scrollView.autohidesScrollers = YES;
+    scrollView.borderType = NSBezelBorder;
+
+    NSTextView *textView = [[NSTextView alloc] initWithFrame:frame];
+    textView.editable = NO;
+    textView.selectable = YES;
+    textView.font = [NSFont monospacedSystemFontOfSize:11 weight:NSFontWeightRegular];
+    textView.string = output.length ? output : @"No se detectaron movimientos.";
+    textView.minSize = NSMakeSize(0, frame.size.height);
+    textView.maxSize = NSMakeSize(CGFLOAT_MAX, CGFLOAT_MAX);
+    textView.verticallyResizable = YES;
+    textView.horizontallyResizable = YES;
+    textView.textContainer.containerSize = NSMakeSize(CGFLOAT_MAX, CGFLOAT_MAX);
+    textView.textContainer.widthTracksTextView = NO;
+    scrollView.documentView = textView;
+    return scrollView;
+}
+
+static void ShowPreview(NSString *output) {
+    NSAlert *alert = [[NSAlert alloc] init];
+    alert.messageText = @"Preview del ordenamiento";
+    alert.informativeText = @"Revisa las rutas propuestas. No se movio ningun archivo.";
+    alert.accessoryView = PreviewView(output);
+    [alert addButtonWithTitle:@"Cerrar"];
+    [alert runModal];
+}
+
+static BOOL ConfirmPlan(NSString *output) {
+    NSAlert *alert = [[NSAlert alloc] init];
+    alert.messageText = @"Confirmar ordenamiento";
+    alert.informativeText = @"Revisa el plan completo antes de mover archivos.";
+    alert.accessoryView = PreviewView(output);
+    [alert addButtonWithTitle:@"Ordenar"];
+    [alert addButtonWithTitle:@"Cancelar"];
+    return [alert runModal] == NSAlertFirstButtonReturn;
 }
 
 static NSURL *LastLaunchRecordURL(void) {
@@ -101,8 +146,8 @@ static NSDictionary *RunOrganizer(NSURL *folder, NSString *flag) {
     if (![task launchAndReturnError:&error]) {
         return @{@"success": @NO, @"output": error.localizedDescription ?: @"No pude ejecutar el organizador."};
     }
-    [task waitUntilExit];
     NSData *data = [pipe.fileHandleForReading readDataToEndOfFile];
+    [task waitUntilExit];
     NSString *output = [[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding];
     output = [output stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
     return @{@"success": @(task.terminationStatus == 0), @"output": output ?: @""};
@@ -143,6 +188,18 @@ int main(void) {
 
         NSURL *folder = ChooseLaunchFolder();
         if (!folder) return 0;
+
+        NSDictionary *preview = RunOrganizer(folder, @"--preview");
+        if (![preview[@"success"] boolValue]) {
+            ShowMessage(@"No se pudo generar el preview", preview[@"output"]);
+            return 0;
+        }
+        if (action == OrganizerActionPreview) {
+            ShowPreview(preview[@"output"]);
+            return 0;
+        }
+        if (!ConfirmPlan(preview[@"output"])) return 0;
+
         NSDictionary *result = RunOrganizer(folder, @"--apply");
         if ([result[@"success"] boolValue]) {
             SaveLastLaunchFolder(folder);

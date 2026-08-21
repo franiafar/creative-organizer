@@ -1,66 +1,61 @@
 # Creative Organizer
 
-Aplicacion para macOS que ordena carpetas de creativos por mercado, tipo de pieza y variante creativa. Trabaja sobre los archivos que ya existen: los mueve y renombra, pero no los duplica.
+Aplicación para macOS que ordena entregas de Paid Media dentro de la carpeta madre del lanzamiento. Primero genera un preview explicable y, al confirmar, mueve únicamente creativos de Meta y TikTok que puede clasificar con seguridad. No duplica la carpeta madre, no sobrescribe archivos y conserva un undo de la última ejecución exitosa.
 
-## Descarga
+## Descarga e instalación
 
-[Descargar siempre la ultima version](https://github.com/franiafar/creative-organizer/releases/latest/download/Creative-Organizer.zip)
+[Descargar siempre la última versión](https://github.com/franiafar/creative-organizer/releases/latest/download/Creative-Organizer.zip). El enlace apunta automáticamente al release más reciente; el historial completo está en [Releases](https://github.com/franiafar/creative-organizer/releases).
 
-El link es permanente: cuando publiquemos una nueva version, descarga automaticamente esa version.
-
-Tambien podes ver el historial de versiones en [Releases](https://github.com/franiafar/creative-organizer/releases).
-
-## Instalar en Mac
-
-1. Descarga `Creative-Organizer.zip` desde el link de arriba.
-2. Hace doble click sobre el ZIP para descomprimirlo.
-3. Abri `Creative Organizer.app`.
-
-Si macOS muestra una alerta la primera vez, hace Control + click sobre la app, elegi `Abrir` y confirmalo. No hace falta instalar Python, Xcode ni herramientas de desarrollo: la app ya trae todo lo necesario.
+Descomprimí el ZIP y abrí `Creative Organizer.app`. Si macOS muestra una alerta la primera vez, hacé Control + click sobre la app, elegí `Abrir` y confirmá. La app ya incluye lo necesario: no hace falta instalar Python ni Xcode.
 
 ## Uso diario
 
-1. Opcional: en la trafficking sheet, copia la columna `Country` completa. La app usara la primera aparicion de cada mercado para asignar el orden de las carpetas.
-2. Abri `Creative Organizer.app` y elegi `Organizar`.
-3. Selecciona la carpeta madre del lanzamiento. No elijas una carpeta de pais individual ni un ZIP suelto.
-4. Espera el mensaje de confirmacion: muestra los mercados que detecto y la carpeta queda lista para publicar.
+Opcionalmente, copiá la columna `Country` completa de la trafficking sheet antes de abrir la app. La primera aparición válida de cada mercado define el orden; los mercados ausentes se agregan de forma determinista. Luego elegí la carpeta madre del lanzamiento, revisá el preview y confirmá `Organizar`. Preview es de solo lectura: muestra origen, destino propuesto, mercado/idioma, plataforma, tipo, jerarquía semántica, metadata técnica ignorada, evidencia y confianza. Los casos ambiguos quedan sin mover y explican el motivo.
 
-Los mercados que no aparezcan en el paste de la trafficking sheet quedan despues de los incluidos, en orden alfabetico.
+## Estructura de salida
 
-## Resultado
-
-La app crea una estructura de carpetas practica para subir las piezas por mercado. Por ejemplo:
+La carpeta elegida conserva su nombre y actúa como raíz. La numeración no lleva ceros a la izquierda y los nombres `Static` y `Motion` siempre se escriben completos:
 
 ```text
-13 Jul Ramadam TT
-├── 01 - US
+13 Jul Ramadan Mega Launch
+├── 1 - BR
 │   ├── Static
+│   │   └── Wrestling - ButNow
 │   └── Motion
-├── 02 - IN EN - St
-│   └── Caricature
-└── 03 - AR - Mt
-    └── Female
+│       └── Wrestling - ButNow
+├── 2 - IN EN - Static
+│   └── Something to Wear
+├── 3 - IN HI - Static
+│   └── Something to Wear
+└── 4 - AR - Motion
+    └── Hair Analysis
+        ├── Hair Analysis CTA
+        └── Hair Analysis CTA Alt
 ```
 
-Cuando un mercado tiene un unico tipo de pieza, lo aclara en el nombre: `- St` para static y `- Mt` para motion. Si tiene ambos, genera las carpetas `Static` y `Motion`. Las separaciones útiles dentro de los creativos, como CTA, Men/Women o personajes, se preservan; las carpetas genéricas como `Motion 11` se omiten.
+Un mercado con un único tipo se llama, por ejemplo, `1 - BR - Static` o `2 - AR - Motion`. Si tiene ambos tipos, el mercado se llama `1 - BR` y contiene hijos inmediatos `Static` y `Motion`. India siempre muestra idioma; otros mercados, como Canadá, lo muestran cuando hay múltiples entregas lingüísticas.
 
-## Reglas que reconoce
+## Qué preserva y qué ignora
 
-La app reconoce códigos de dos letras y nombres completos de países, incluyendo formatos como `Australia`, `Canada`, `UK`, `GB`, `AU EN` o nombres compactos. Para mercados con varios idiomas, usa el código de idioma solo cuando hace falta identificar la variante. India siempre muestra idioma: `IN EN`, `IN HI` o `IN RO`.
+Se conserva la jerarquía semántica completa, incluso cuando aparece antes o después de `Stills`/`Video`: concepto, ejecución, CTA, CTA Alt, Test A/B, hook, personaje, audiencia, copy y variantes de entrega. Por ejemplo, `Hairstyle/Test A` y `Color Analysis/Test A` nunca se mezclan aunque sus filenames sean iguales o contradictorios. La ruta fuente semántica tiene prioridad sobre el filename.
 
-Los ZIPs, spreadsheets y otros archivos que no correspondan a un creativo de mercado se agrupan dentro de `Otros`. Los archivos de sistema vacíos o de macOS no se conservan como carpetas intermedias.
+Los wrappers técnicos no crean niveles: `Regions`, país/idioma, `Stills`, `Static`, `Video`, `Motion`, `Motion 11`, formatos `1x1`, `4x5`, `9x16`, resoluciones, duración, fecha, IDs, mercado y plataforma. El parser anclado de filename es el mismo para Static y Motion; puede enriquecer `Wrestling` con `ButNow` para producir `Wrestling - ButNow` o recuperar `Something To Wear` cuando no hay carpeta de concepto.
 
-## Deshacer
+La organización procesa solo Meta y TikTok/TT. YouTube, spreadsheets, trackers, ZIPs y cualquier material no soportado quedan exactamente donde estaban; no existe una carpeta `Otros`. Tampoco se crean carpetas vacías desde una plantilla global. Meta y TikTok conviven sin nivel de plataforma cuando sus filenames son distintos; `Meta`/`TikTok` aparece solo si resuelve de forma segura una colisión entre plataformas.
 
-Al abrir la app, elegi `Deshacer el ordenamiento anterior` para revertir **solamente el ultimo** lanzamiento que organizo Creative Organizer. No pide volver a elegir una carpeta: recuerda internamente el ultimo lanzamiento. Usalo antes de organizar otra carpeta si queres volver atras.
+## Colisiones, duplicados y seguridad
 
-## Guia visual
+Creative Organizer nunca sobrescribe. Ante una colisión intenta primero una separación justificable por plataforma; si no alcanza, deja los archivos en origen para revisión. Los duplicados byte a byte también se conservan en ambos lugares: no se elimina información para “limpiar” el árbol.
 
-[Ver la guia visual de instalacion y uso](https://creative-organizer-guide.dept-7420.chatgpt.site)
+Apply es transaccional. Si un movimiento falla, los movimientos ya hechos vuelven a sus rutas originales. La segunda ejecución sobre un lanzamiento ya ordenado es idempotente y no agrega niveles ni renumera carpetas. `Undo` revierte la última ejecución exitosa, restaura la jerarquía fuente y luego consume ese registro; repetir Undo no modifica nada.
 
-## Desarrollo
+## Desarrollo y pruebas
 
-- `Creative Organizer.app/Contents/Resources/Organizador.m`: interfaz nativa de macOS.
-- `Creative Organizer.app/Contents/Resources/ordenar_lanzamiento.py`: reglas de deteccion y movimiento de creativos.
+El motor está en `Creative Organizer.app/Contents/Resources/ordenar_lanzamiento.py` y la interfaz nativa activa en `Organizador.m`. La suite usa solamente la biblioteca estándar y directorios temporales:
 
-Al publicar una etiqueta con formato `vX.Y.Z`, GitHub arma automaticamente un nuevo ZIP instalable en Releases.
+```sh
+PYTHONPYCACHEPREFIX=/tmp/creative-organizer-test-pycache python3 -m unittest discover -s tests -v
+PYTHONPYCACHEPREFIX=/tmp/creative-organizer-test-pycache python3 -m py_compile 'Creative Organizer.app/Contents/Resources/ordenar_lanzamiento.py'
+```
+
+El runtime objetivo es Python 3.9. Al publicar una etiqueta `vX.Y.Z`, GitHub prepara el ZIP instalable del release.
